@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0c0a09;
+  --surface: #1a1816;
+  --surface-hover: #262320;
+  --border: #2e2b28;
+  --border-hover: #44403c;
+
+  --brand: #c9a84c;
+  --brand-bright: #dbb85e;
+  --brand-dim: #8a7034;
+
+  --buy: #22c55e;
+  --sell: #ef4444;
+
+  --status-new: #3b82f6;
+  --status-graduating: #f59e0b;
+  --status-graduated: #c9a84c;
+
+  --text-1: #e7e5e4;
+  --text-2: #a8a29e;
+  --text-3: #78716c;
+
+  --glow-brand: rgba(201, 168, 76, 0.35);
+  --glow-brand-strong: rgba(201, 168, 76, 0.5);
+  --glow-graduating: rgba(245, 158, 11, 0.3);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+
+  --color-brand: var(--brand);
+  --color-brand-bright: var(--brand-bright);
+  --color-brand-dim: var(--brand-dim);
+
+  --color-buy: var(--buy);
+  --color-sell: var(--sell);
+
+  --color-status-new: var(--status-new);
+  --color-status-graduating: var(--status-graduating);
+  --color-status-graduated: var(--status-graduated);
+
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+
+  --font-display: var(--font-space-grotesk);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html { color-scheme: dark; }
+body { background: var(--bg); color: var(--text-1); }
+
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); }
+::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+/* ─── Animations ─── */
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes count-fade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes graduating-glow {
+  0%, 100% {
+    border-color: rgba(245, 158, 11, 0.2);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+  50% {
+    border-color: rgba(245, 158, 11, 0.55);
+    box-shadow: 0 0 28px -4px rgba(245, 158, 11, 0.2);
+  }
+}
+
+@keyframes fill-bar {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes gradient-x {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes draw-spark {
+  from { stroke-dashoffset: 300; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px -4px var(--glow-brand); }
+  50% { box-shadow: 0 0 44px -4px var(--glow-brand-strong); }
+}
+
+@keyframes float-orb-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(80px, -60px) scale(1.1); }
+  50% { transform: translate(-40px, 80px) scale(0.95); }
+  75% { transform: translate(60px, 40px) scale(1.05); }
+}
+
+@keyframes float-orb-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-70px, 50px) scale(1.08); }
+  66% { transform: translate(50px, -70px) scale(0.92); }
+}
+
+@keyframes float-orb-3 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-90px, -40px); }
+}
+
+@keyframes draw-curve {
+  from { stroke-dashoffset: 500; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes grad-flash {
+  0% { opacity: 0; r: 6; }
+  30% { opacity: 1; r: 20; }
+  100% { opacity: 0; r: 40; }
+}
+
+@keyframes scroll-bounce {
+  0%, 100% { transform: translateY(0); opacity: 1; }
+  50% { transform: translateY(6px); opacity: 0.5; }
+}
+
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* ─── Noise grain overlay ─── */
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
