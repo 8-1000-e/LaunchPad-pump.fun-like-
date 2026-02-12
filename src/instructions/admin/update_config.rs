@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::state::*;
 
-pub fn handler(ctx: Context<UpdateConfig>, 
+pub fn _update_config(ctx: Context<UpdateConfig>, 
     new_fee_receiver: Option<Pubkey>,
     new_initial_virtual_sol_reserves: Option<u64>,
     new_initial_virtual_token_reserves: Option<u64>,

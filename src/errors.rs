@@ -28,5 +28,5 @@ pub enum TradeError
     #[msg("Program Paused !")]
     ProgramPaused,
     #[msg("Not Enough tokens available !")]
-    NOtEnoughTokens,
+    NotEnoughTokens,
 }

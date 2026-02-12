@@ -3,7 +3,7 @@ use crate::constants::*;
 use crate::state::*;
 use crate::errors::*;
 
-pub fn handler(ctx: Context<WithdrawFees>) -> Result<()>
+pub fn _withdraw_fees(ctx: Context<WithdrawFees>) -> Result<()>
 {
     let rent = Rent::get()?.minimum_balance(0);
     let amount = ctx.accounts.fee_vault.lamports()                      

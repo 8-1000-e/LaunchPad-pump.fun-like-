@@ -6,7 +6,7 @@ use anchor_spl::token::{Mint, TokenAccount, Token};
 use anchor_spl::associated_token::AssociatedToken;
 use crate::utils::math::calculate_buy_amount;
 
-pub fn handler(ctx: Context<Buy>, sol_amount: u64, min_tokens_out: u64) -> Result<()>
+pub fn _buy(ctx: Context<Buy>, sol_amount: u64, min_tokens_out: u64) -> Result<()>
 {
     require!(sol_amount > 0, TradeError::ZeroAmount);
     require!(ctx.accounts.global.status != ProgramStatus::Paused, TradeError::ProgramPaused);
@@ -41,6 +41,7 @@ pub fn handler(ctx: Context<Buy>, sol_amount: u64, min_tokens_out: u64) -> Resul
     ctx.accounts.mint.to_account_info().key.as_ref(),
     &[ctx.accounts.bonding_curve.bump],
     ];
+    let binding = [signer_seeds];
     let cpi_context = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),
         anchor_spl::token::Transfer{
@@ -48,37 +49,63 @@ pub fn handler(ctx: Context<Buy>, sol_amount: u64, min_tokens_out: u64) -> Resul
             to: ctx.accounts.buyer_token_account.to_account_info(),
             authority: ctx.accounts.bonding_curve.to_account_info(),
         },
-        &[signer_seeds]
+        &binding
     );
 
     anchor_spl::token::transfer(cpi_context, tokens_out)?;
 
     if let Some(referrer) = &ctx.accounts.referrer 
     {
-    // 1. referral_fee = fee * referral_share_bps / 10_000           
-    // 2. Calcule protocol_fee = fee - referral_fee
-    // 3. Transfer protocol_fee → fee_vault                                  
-    // 4. Transfer referral_fee → referrer                                   
+        let referral_fee = (fee as u128)                                             
+            .checked_mul(ctx.accounts.global.referral_share_bps as u128)             
+            .ok_or(MathError::Overflow)?                                             
+            .checked_div(10_000)
+            .ok_or(MathError::DivisionByZero)? as u64;
+
+        let protocol_fee = fee - referral_fee;
+
+        let cpi_context = CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            anchor_lang::system_program::Transfer{
+                from: ctx.accounts.buyer.to_account_info(),
+                to: ctx.accounts.fee_vault.to_account_info(),
+            }
+        );
+
+        anchor_lang::system_program::transfer(cpi_context, protocol_fee)?;
+
+            let cpi_context = CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            anchor_lang::system_program::Transfer{
+                from: ctx.accounts.buyer.to_account_info(),
+                to: referrer.to_account_info(),
+            }
+        );
+
+        anchor_lang::system_program::transfer(cpi_context, referral_fee)?;
     } 
     else 
     { 
-    
+        let cpi_context = CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer{
+                    from: ctx.accounts.buyer.to_account_info(),
+                    to: ctx.accounts.fee_vault.to_account_info(),
+                }
+            );
+
+        anchor_lang::system_program::transfer(cpi_context, fee)?;
     }
-      // ── 5. TRANSFERT SOL : buyer → fee_vault ──
-      // system_program::transfer de fee
 
-      // ── 6. TRANSFERT TOKENS : bonding_curve → buyer ──
-      // token::transfer avec signer seeds du bonding_curve PDA
+    ctx.accounts.bonding_curve.virtual_sol += sol_after_fee;
+    ctx.accounts.bonding_curve.virtual_token -= tokens_out;
+    ctx.accounts.bonding_curve.real_sol_reserves += sol_after_fee;
+    ctx.accounts.bonding_curve.real_token -= tokens_out;
 
-      // ── 7. UPDATE STATE ──
-      // bonding_curve.virtual_sol += sol_after_fee
-      // bonding_curve.virtual_token -= tokens_out
-      // bonding_curve.real_sol_reserves += sol_after_fee
-      // bonding_curve.real_token -= tokens_out
-
-      // ── 8. CHECK GRADUATION ──
-      // si real_sol_reserves >= graduation_threshold → completed = true
-
+    if ctx.accounts.bonding_curve.real_sol_reserves >= ctx.accounts.global.graduation_threshold
+    {
+      ctx.accounts.bonding_curve.completed = true;
+    }
     Ok(())
 }
 
