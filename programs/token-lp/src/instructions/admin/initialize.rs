@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::state::*;
 
-pub fn handler(ctx: Context<Initialize>) -> Result<()>
+pub fn _initialize(ctx: Context<Initialize>) -> Result<()>
 {
     ctx.accounts.global.authority = ctx.accounts.authority.key();
     ctx.accounts.global.fee_receiver = ctx.accounts.authority.key();

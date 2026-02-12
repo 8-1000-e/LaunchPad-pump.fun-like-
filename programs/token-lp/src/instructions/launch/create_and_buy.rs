@@ -1,7 +1,6 @@
 use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::state::*;
-use crate::errors::*;
 use anchor_spl::token::{Mint, TokenAccount, Token};
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::metadata::{

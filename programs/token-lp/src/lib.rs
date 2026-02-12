@@ -18,7 +18,7 @@ pub mod token_lp {
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> 
     {
-        instructions::admin::initialize::handler(ctx)
+        instructions::admin::initialize::_initialize(ctx)
     }
 
     pub fn update_config(ctx: Context<UpdateConfig>, 
@@ -34,16 +34,22 @@ pub mod token_lp {
         new_status: Option<ProgramStatus>,
     ) -> Result<()>
     {
-        instructions::admin::update_config::handler(ctx, new_fee_receiver, new_initial_virtual_sol_reserves, new_initial_virtual_token_reserves, new_initial_real_token_reserves, new_token_total_supply, new_trade_fee_bps, new_creator_share_bps, new_referral_share_bps, new_graduation_threshold, new_status)
+        instructions::admin::update_config::_update_config(ctx, new_fee_receiver, new_initial_virtual_sol_reserves, new_initial_virtual_token_reserves, new_initial_real_token_reserves, new_token_total_supply, new_trade_fee_bps, new_creator_share_bps, new_referral_share_bps, new_graduation_threshold, new_status)
     }
 
     pub fn withdraw_fees(ctx: Context<WithdrawFees>) -> Result<()>
     {
-        instructions::admin::withdraw_fees::handler(ctx)
+        instructions::admin::withdraw_fees::_withdraw_fees(ctx)
     }
 
     pub fn create_token(ctx: Context<CreateToken>, name: String, symbol: String, uri: String) -> Result<()>
     {
-        instructions::launch::create_token::handler(ctx, name, symbol, uri)
+        instructions::launch::create_token::_create_token(ctx, name, symbol, uri)
     }
+
+    pub fn buy_token(ctx: Context<Buy>, sol_amount: u64, min_tokens_out: u64) -> Result<()>
+    {
+        instructions::trade::buy::_buy(ctx, sol_amount, min_tokens_out)
+    }
+
 }
