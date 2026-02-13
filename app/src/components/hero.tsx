@@ -144,9 +144,10 @@ export function Hero({
   );
 
   /* ── Scroll-linked values (desktop only) ── */
-  const canvasFade = isMobile ? 1 : Math.max(0, 1 - scrollProgress * 1.2);
-  const canvasBlur = isMobile ? 0 : scrollProgress * 25;
-  const canvasScale = isMobile ? 1 : 1 + scrollProgress * 0.2;
+  // Cross-fade: hero starts fading at 20% scroll, gone by 60%
+  const canvasFade = isMobile ? 1 : Math.max(0, 1 - Math.pow(Math.min(1, scrollProgress / 0.6), 1.5));
+  const canvasBlur = isMobile ? 0 : Math.pow(Math.min(1, scrollProgress / 0.5), 2) * 20;
+  const canvasScale = isMobile ? 1 : 1 + scrollProgress * 0.15;
   const textFade = isMobile ? 1 : Math.max(0, 1 - scrollProgress * 1.5);
   const textShift = isMobile ? 0 : -scrollProgress * 100;
   const textScale = isMobile ? 1 : 1 - scrollProgress * 0.08;

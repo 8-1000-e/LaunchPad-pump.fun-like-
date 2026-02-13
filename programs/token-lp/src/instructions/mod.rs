@@ -8,3 +8,4 @@ pub use admin::*;
 pub use launch::*;
 pub use trade::*;
 pub use referral::*;
+pub use migration::*;

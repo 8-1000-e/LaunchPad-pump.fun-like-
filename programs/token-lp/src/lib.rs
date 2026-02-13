@@ -71,4 +71,9 @@ pub mod token_lp {
     {
         instructions::referral::claim_fees::_claim_referral_fees(ctx)
     }
+
+    pub fn migrate_to_raydium(ctx: Context<MigrateRaydium>) -> Result<()>
+    {
+        instructions::migration::migrate_to_raydium::_migrate_to_raydium(ctx)
+    }
 }

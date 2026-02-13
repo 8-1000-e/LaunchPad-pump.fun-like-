@@ -1,57 +1,84 @@
-# Current Task — All 4 Frontend Pages Complete
+# Current Task — Raydium CPMM Migration (Phase 5)
 
 ## What Was Done This Session
 
-### 1. Create Token Page (`/create`) — NEW
-- **Form sections**: Token Info (name max 32, symbol max 10 auto-uppercase, description max 500), Branding (banner upload + image upload + color picker), Social Links (Twitter/Telegram/Website), Buy on Create (anti-snipe toggle), Cost Summary
-- **Image uploads**: Both banner and token image support click-to-browse AND drag & drop (`onDrop`, `onDragOver`, `onDragLeave` + `FileReader.readAsDataURL`)
-- **Color picker**: 12 preset swatches (`h-8 w-8 shrink-0 rounded-full` in flex-wrap) + custom hex input + native color picker button
-- **Buy on Create**: Custom CSS toggle switch (round knob on pill track), Shield icon + anti-snipe explanation ("Your buy executes in the same transaction as the token creation, no one can front-run you. Only possible at creation."), pill-style amount selector with brand glow
-- **Live preview**: Sticky sidebar on desktop showing token card preview + banner preview. Updates in real-time as form changes.
-- **Launch flow**: Mock launch with success state (confetti-style celebration)
-- **Layout**: Centered `max-w-[960px]`, `lg:grid-cols-[minmax(0,600px)_320px]`
-- **Background**: 2 attenuated orbs + radial gradients + noise overlay
-- **File**: `app/src/app/create/page.tsx` (~900 lines)
+### 1. create_and_buy.rs — Handler Complete
+- Full handler: creates token (init bonding curve, mint_to, metadata CPI) + atomic first buy
+- No slippage check (first buyer, deterministic price)
+- `require!(sol_amount > 0)` — if frontend doesn't want to buy, it calls `create_token` instead
+- Status check added: `require!(global.status != ProgramStatus::Paused)`
+- Builds clean
 
-### 2. Leaderboard Page (`/leaderboard`) — NEW
-- **Live activity ticker**: Scrolling marquee with buy (green) / sell (red) / graduated (gold) events, CSS `ticker-scroll` animation with doubled content
-- **Hero section**: 3 animated counters (requestAnimationFrame + ease-out cubic) + CSS 3D trophy (crown + cup + base + 8 floating particles, `trophy-rotate` keyframe)
-- **3 tabs**: Top Tokens, Top Traders, Top Creators — each with its own data table
-- **Timeframe selector**: 24h / 7d / 30d / All as pill buttons
-- **Podium**: Top 3 displayed as podium cards with crown for #1, silver/bronze medals for #2/#3. Content adapts to active tab.
-- **Data tables**: `TokensTable`, `TradersTable`, `CreatorsTable` — full tables with staggered fade-in, responsive column hiding, hover effects, rank badges
-- **Hall of Fame**: Horizontal scroll of holographic tilt cards for graduated tokens. Gold animated border (`gradient-x`), 3D perspective transform on hover.
-- **Background**: 2 floating orbs (5%/4% opacity), radial gradients (8%/5%), noise overlay
-- **Mock data**: 25 tokens, 20 traders, 18 creators, 12 activity items, 8 graduated tokens
-- **File**: `app/src/app/leaderboard/page.tsx` (~750 lines)
+### 2. sell.rs — Handler Complete (Step-by-Step)
+- Mirror of buy.rs with reversed CPI signing
+- Fee on `sol_out` (not token_amount): `fee = sol_out * bps / 10000`
+- Transfer 1: tokens seller→bonding_curve (`CpiContext::new`, token_program, seller signs)
+- Transfer 2: SOL bonding_curve→seller (`CpiContext::new_with_signer`, system_program, PDA signs)
+- All fee transfers from PDA with `CpiContext::new_with_signer` + `&binding`
+- State: `virtual_sol -= sol_out`, `virtual_token += token_amount`, `real_sol -= sol_out`, `real_token += token_amount`
+- Referral integration: `Option<Account<'info, Referral>>`
 
-### 3. Fixed Pre-existing TS Error
-- `bonding-curve-3d.tsx:837`: Added `if (!container) return;` guard before `container.getBoundingClientRect()`
+### 3. calculate_sell_amount — Added to math.rs
+- `sol_out = (virtual_sol * token_amount) / (virtual_token + token_amount)`
+- Mirror of calculate_buy_amount with sol/token swapped
 
-### 4. Iterative UI Fixes on Create Page
-- Color swatches were ovals → fixed with `h-8 w-8 shrink-0 rounded-full` (was `w-full` in grid)
-- Added banner upload (was missing initially)
-- Replaced ugly ToggleLeft/ToggleRight icons with custom CSS toggle switch
-- Replaced flat amount buttons with rounded pill selector with brand glow
-- Added anti-snipe explanation text with Shield icon
-- Removed em-dashes, added "Only possible at creation."
+### 4. register_referral.rs — Complete
+- Creates Referral PDA with `seeds = [REFERRAL_SEED, user.key().as_ref()]`
+- Sets referrer, total_earned=0, trade_count=0, bump
+- Uses existing `Referral` struct from state
 
-## What's Next
+### 5. claim_referral_fees.rs — Complete
+- Withdraws lamports from Referral PDA (rent-protected)
+- `minimum_balance(8 + Referral::INIT_SPACE)` for correct rent
+- `.to_account_info().lamports()` pattern (Account<T> doesn't have .lamports() directly)
+- Constraint: `referral.referrer == user.key()`
 
-### 1. Orphan File Cleanup
-- `components/how-it-works.tsx` — created then removed from page
-- `components/activity-ticker.tsx` — created then removed from page
+### 6. Referral Integration into buy.rs + sell.rs
+- Changed `Option<UncheckedAccount>` → `Option<Account<'info, Referral>>`
+- Added `referral.total_earned += referral_fee; referral.trade_count += 1;`
+- Fee sent to Referral PDA, referrer claims via `claim_referral_fees`
 
-### 2. Backend — Continue Phase 1
-- `instructions/admin/update_config.rs` ← NEXT for Emile (pedagogical mode)
-- `instructions/admin/withdraw_fees.rs`
-- `errors.rs` + `events.rs` (add as needed)
+### 7. Security Audit — Full Program
+- CRITICAL: No input validation in update_config (admin can set fee_bps > 10000)
+- CRITICAL: Integer underflow in `sol_amount - fee` needs checked_sub
+- HIGH: Sell blocked on completed curve (users locked until migration)
+- HIGH: State updates after CPIs (should be checks-effects-interactions)
+- MEDIUM: No events emitted, no string length validation
+- Status checks added to create_token and create_and_buy (was missing)
 
-### 3. Future Frontend
-- Connect to real Anchor program once SDK is built
-- Real wallet adapter integration (currently mock)
-- WebSocket-driven live data (currently simulated)
+### 8. migrate_to_raydium.rs — Struct Partially Written
+- Copied Raydium CPMM accounts from official example
+- Added bonding_curve + mint + fee_vault accounts
+- Fixed: removed `init` from mint/bonding_curve (already exist at migration time)
+
+## What's Next — Immediate
+
+### 1. Fix migrate_to_raydium.rs struct (remaining issues)
+- Lines 101/109: `token::authority = creator` → `token::authority = bonding_curve` (creator doesn't exist in struct)
+- `fee_vault` needs `mut` (migration fee gets sent there)
+- wSOL wrapping: bonding curve holds raw SOL lamports, Raydium needs wrapped SOL token accounts
+- Need to add wSOL-related accounts (WSOL mint, wrapping accounts)
+
+### 2. Write migrate_to_raydium.rs handler
+Roadmap:
+1. Validations (authority == global.admin, curve completed, not already migrated)
+2. Migration fee: transfer 0.5 SOL from bonding curve to fee_vault
+3. Wrap remaining SOL into wSOL token account
+4. CPI to Raydium CPMM `initialize` (creates pool with token + wSOL)
+5. Burn LP tokens (or send to dead address)
+6. Mark `bonding_curve.migrated = true`
+
+### 3. Security audit fixes
+- Input validation in update_config (cap fee_bps, validate virtual_sol > 0)
+- checked_sub for fee calculations in buy/sell
+
+### 4. Events (events.rs)
+- TokenCreated, TokenBought, TokenSold, CurveGraduated, Migrated
+
+### 5. Tests
+- 01_admin.test.ts through 05_migration.test.ts
 
 ## Known Issues
-- TypeScript error in `bonding-curve-3d.tsx:837` — FIXED this session
-- Orphan component files still exist (not blocking)
+- `events.rs` still empty
+- No tests written yet
+- Security audit items not yet fixed

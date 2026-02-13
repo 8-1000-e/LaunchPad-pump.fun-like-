@@ -133,3 +133,38 @@
 **Context**: Leaderboard hero shows stats (total tokens launched, total volume, active traders).
 **Decision**: `useAnimatedCounter` hook using `requestAnimationFrame` + ease-out cubic easing (`1 - Math.pow(1 - t, 3)`), animates from 0 to target over 2 seconds.
 **Rationale**: Counting up from zero creates a "reveal" moment. rAF ensures smooth 60fps animation. Ease-out cubic feels natural — fast start, smooth landing.
+
+## 2026-02-11 — Backend: create_and_buy is NOT conditional
+**Context**: Emile wrote `require!(sol_amount > 0)` in create_and_buy. Mentor suggested making the buy conditional with `if`.
+**Decision**: Keep `require!(sol_amount > 0)`. If frontend doesn't want a buy, it calls `create_token` instead.
+**Rationale**: Two separate instructions (`create_token` and `create_and_buy`) is cleaner than one instruction with conditional logic. The require! serves as validation, not flow control.
+
+## 2026-02-11 — Backend: Sell fee on SOL output, not token amount
+**Context**: In sell.rs, fee could be calculated on tokens received or SOL paid out.
+**Decision**: Fee is always on SOL — `fee = sol_out * trade_fee_bps / 10000`. Same as buy (fee on SOL input).
+**Rationale**: Consistent fee denomination (always SOL) simplifies accounting. Fee comes from the SOL output before reaching the seller.
+
+## 2026-02-11 — Backend: PDA signs ALL SOL transfers in sell
+**Context**: In sell.rs, SOL goes from bonding curve PDA to seller and to fee recipients.
+**Decision**: All SOL transfers use `CpiContext::new_with_signer` with bonding curve PDA seeds. Seller only signs the token transfer.
+**Rationale**: In sell, the bonding curve PDA holds the SOL — it must sign to release it. Unlike buy where the buyer signs SOL transfers directly.
+
+## 2026-02-11 — Backend: Referral fees accumulate in PDA, not sent to wallet
+**Context**: Referral fees could be sent directly to the referrer's wallet on each trade, or accumulated in the Referral PDA.
+**Decision**: Fees accumulate in Referral PDA. Referrer claims via `claim_referral_fees`.
+**Rationale**: Fewer transfers per trade (lower compute). Referrer pays rent for their PDA. Prevents dust attacks (many tiny transfers). Simpler trade handler.
+
+## 2026-02-11 — Backend: Option<Account<Referral>> over UncheckedAccount
+**Context**: Originally referral was `Option<UncheckedAccount>` in buy/sell.
+**Decision**: Changed to `Option<Account<'info, Referral>>` with proper deserialization.
+**Rationale**: UncheckedAccount doesn't validate the account data. An attacker could pass any account as "referral". Account<Referral> ensures proper deserialization + seed validation.
+
+## 2026-02-11 — Backend: CPMM over AMM V4 for Raydium migration
+**Context**: Raydium offers AMM V4 (with OpenBook market) and CPMM (standalone).
+**Decision**: Use Raydium CPMM (`CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C`).
+**Rationale**: CPMM doesn't require creating an OpenBook market (~3 SOL + complex multi-tx setup). Simpler CPI, fewer accounts, available on devnet. This is what pump.fun uses.
+
+## 2026-02-11 — Backend: raydium-cp-swap crate from git
+**Context**: Need to CPI into Raydium CPMM from Anchor 0.32.1 program.
+**Decision**: `raydium-cp-swap = { git = "https://github.com/raydium-io/raydium-cp-swap", features = ["no-entrypoint", "cpi"] }`
+**Rationale**: Crate built for Anchor 0.29 but compiles fine with 0.32.1. Provides account structs (AmmConfig, PoolState) and CPI helpers. No version conflicts.

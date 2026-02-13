@@ -173,6 +173,24 @@ export default function Home() {
     // Enable snap scroll on home page only (desktop)
     if (!mobile) document.documentElement.classList.add("snap-page");
 
+    // Load Unicorn Studio (desktop only)
+    if (!mobile && !(window as any).UnicornStudio) {
+      (window as any).UnicornStudio = { isInitialized: false };
+      const script = document.createElement("script");
+      script.src =
+        "https://cdn.jsdelivr.net/gh/hiunicornstudio/unicornstudio.js@v1.4.29/dist/unicornStudio.umd.js";
+      script.onload = () => {
+        if (!(window as any).UnicornStudio.isInitialized) {
+          (window as any).UnicornStudio.init();
+          (window as any).UnicornStudio.isInitialized = true;
+        }
+      };
+      document.head.appendChild(script);
+    } else if (!mobile && (window as any).UnicornStudio?.init) {
+      // Re-init if script already loaded (e.g. navigation back)
+      (window as any).UnicornStudio.init();
+    }
+
     let ticking = false;
     function onScroll() {
       if (!ticking) {
@@ -276,6 +294,27 @@ export default function Home() {
 
       {/* Noise grain texture (no parallax — stays fixed) */}
       <div className="noise-overlay" />
+
+      {/* ── Unicorn Studio 3D background — fades in after hero ── */}
+      {!isMobile && (
+        <div
+          className="pointer-events-none fixed inset-0"
+          style={{
+            // Cross-fade: starts at 20% scroll, full at 55% — overlaps with hero fade-out
+            opacity: Math.min(1, Math.max(0, (scrollProgress - 0.2) / 0.35)),
+            willChange: "opacity",
+          }}
+        >
+          <div
+            data-us-project="cqcLtDwfoHqqRPttBbQE"
+            data-us-disablemouse
+            className="absolute inset-0"
+            style={{ filter: "sepia(1) saturate(2) hue-rotate(5deg) brightness(0.85)" }}
+          />
+          {/* Readability overlay */}
+          <div className="absolute inset-0 bg-bg/30" />
+        </div>
+      )}
 
       {/* ── Floating CTA — appears after scrolling past hero ── */}
       <a
