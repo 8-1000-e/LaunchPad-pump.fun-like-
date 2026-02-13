@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::state::*;
+use crate::errors::*;
 use anchor_spl::token::{Mint, TokenAccount, Token};
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::metadata::{
@@ -12,6 +13,8 @@ use anchor_spl::metadata::{
 
 pub fn _create_token(ctx: Context<CreateToken>, name: String, symbol: String, uri: String) -> Result<()>
 {
+    require!(ctx.accounts.global.status != ProgramStatus::Paused, AdminError::ProgramPaused);
+
     let bc = &mut ctx.accounts.bonding_curve;                                    
     bc.mint = ctx.accounts.mint.key();                                           
     bc.creator = ctx.accounts.creator.key();                                     

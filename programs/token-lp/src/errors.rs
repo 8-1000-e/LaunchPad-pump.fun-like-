@@ -4,7 +4,9 @@ use anchor_lang::prelude::*;
 pub enum AdminError
 {
     #[msg("Not enough lamports to withdraw fees!")]
-    NotEnoughLamports
+    NotEnoughLamports,
+    #[msg("Program is paused!")]
+    ProgramPaused,
 }
 
 #[error_code]

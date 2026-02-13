@@ -47,9 +47,28 @@ pub mod token_lp {
         instructions::launch::create_token::_create_token(ctx, name, symbol, uri)
     }
 
+    pub fn create_and_buy_token(ctx: Context<CreateAndBuyToken>, name: String, symbol: String, uri: String, sol_amount: u64) -> Result<()>
+    {
+        instructions::launch::create_and_buy::_create_and_buy_token(ctx, name, symbol, uri, sol_amount)
+    }
+
     pub fn buy_token(ctx: Context<Buy>, sol_amount: u64, min_tokens_out: u64) -> Result<()>
     {
         instructions::trade::buy::_buy(ctx, sol_amount, min_tokens_out)
     }
 
+    pub fn sell_token(ctx: Context<Sell>, token_amount: u64, min_sol_out: u64) -> Result<()>
+    {
+        instructions::trade::sell::_sell(ctx, token_amount, min_sol_out)
+    }  
+
+    pub fn register_referral(ctx: Context<RegisterReferral>) -> Result<()>
+    {
+        instructions::referral::register_referral::_register_referral(ctx)
+    }
+
+    pub fn claim_referral_fees(ctx: Context<ClaimReferralFees>) -> Result<()>
+    {
+        instructions::referral::claim_fees::_claim_referral_fees(ctx)
+    }
 }

@@ -54,11 +54,11 @@ pub fn _buy(ctx: Context<Buy>, sol_amount: u64, min_tokens_out: u64) -> Result<(
 
     anchor_spl::token::transfer(cpi_context, tokens_out)?;
 
-    if let Some(referrer) = &ctx.accounts.referrer 
+    if let Some(referral) = &mut ctx.accounts.referral
     {
-        let referral_fee = (fee as u128)                                             
-            .checked_mul(ctx.accounts.global.referral_share_bps as u128)             
-            .ok_or(MathError::Overflow)?                                             
+        let referral_fee = (fee as u128)
+            .checked_mul(ctx.accounts.global.referral_share_bps as u128)
+            .ok_or(MathError::Overflow)?
             .checked_div(10_000)
             .ok_or(MathError::DivisionByZero)? as u64;
 
@@ -74,15 +74,18 @@ pub fn _buy(ctx: Context<Buy>, sol_amount: u64, min_tokens_out: u64) -> Result<(
 
         anchor_lang::system_program::transfer(cpi_context, protocol_fee)?;
 
-            let cpi_context = CpiContext::new(
+        let cpi_context = CpiContext::new(
             ctx.accounts.system_program.to_account_info(),
             anchor_lang::system_program::Transfer{
                 from: ctx.accounts.buyer.to_account_info(),
-                to: referrer.to_account_info(),
+                to: referral.to_account_info(),
             }
         );
 
         anchor_lang::system_program::transfer(cpi_context, referral_fee)?;
+
+        referral.total_earned += referral_fee;
+        referral.trade_count += 1;
     } 
     else 
     { 
@@ -154,8 +157,8 @@ pub struct Buy<'info>
     )]
     pub fee_vault: SystemAccount<'info>,
   
-    /// CHECK: referrer wallet, optional
-    pub referrer: Option<UncheckedAccount<'info>>,
+    #[account(mut)]
+    pub referral: Option<Account<'info, Referral>>,
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
