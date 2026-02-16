@@ -6,6 +6,8 @@ import IDL from "../../target/idl/token_lp.json";
 import { PROGRAM_ID, TOKEN_METADATA_PROGRAM_ID } from "./constants";
 import { getBondingCurvePda, getFeeVaultPda, getGlobalPda, getMetadataPda, getReferralPda } from "./pda";
 import { BondingCurve, Global, ProgramStatus, Referral } from "./types";
+import { getCurrentPrice } from "./math";
+
 
 export class TokenLaunchpadClient
 {
@@ -241,5 +243,17 @@ export class TokenLaunchpadClient
         const pda = getReferralPda(user);
         return this.program.account.referral.fetch(pda);
     }
+
+    async listAllBondingCurves() 
+    {
+      return await this.program.account.bondingCurve.all();
+    }
+
+    async getTokenPrice(mint: PublicKey): Promise<number>
+    {
+        const bc = await this.getBondingCurve(mint);
+        return getCurrentPrice(bc.virtualSol, bc.virtualToken);
+    }
+
 
 }

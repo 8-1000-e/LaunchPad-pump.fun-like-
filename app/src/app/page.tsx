@@ -1,12 +1,16 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { Search, ArrowUpDown, ChevronDown, ArrowRight, Rocket, TrendingUp, Zap } from "lucide-react";
+import { Search, ArrowUpDown, ChevronDown, ArrowRight, Rocket, TrendingUp, Zap, Loader2 } from "lucide-react";
+import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { Navbar } from "@/components/navbar";
 import { Hero } from "@/components/hero";
 
 import { Footer } from "@/components/footer";
 import { TokenCard, type TokenData } from "@/components/token-card";
+import { useTokenLaunchpad } from "@/hooks/use-token-launchpad";
+import { fetchBatchMetadata } from "@/hooks/use-token-metadata";
+import { DEFAULT_GRADUATION_THRESHOLD } from "@sdk/constants";
 
 /* ─── Deterministic sparkline data generator ─── */
 
@@ -32,106 +36,8 @@ const C = [
   "#14b8a6", "#6366f1",
 ];
 
-/* ─── Mock data ─── */
-
-const TOKENS: TokenData[] = [
-  {
-    id: "1", name: "Doge Killer", symbol: "DOGEK",
-    price: 0.00234, priceChange24h: 142.5,
-    marketCap: 67.8, volume24h: 23.4,
-    graduationProgress: 79, status: "graduating",
-    creator: "7xK2mBfR3nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "2h", color: C[0], sparkData: spark(1, true),
-  },
-  {
-    id: "2", name: "Pepe Solana", symbol: "PEPES",
-    price: 0.000891, priceChange24h: 34.2,
-    marketCap: 42.1, volume24h: 15.7,
-    graduationProgress: 49, status: "active",
-    creator: "3pK9mBfR4nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "4h", color: C[1], sparkData: spark(2, true),
-  },
-  {
-    id: "3", name: "CatWifHat", symbol: "CWH",
-    price: 0.00567, priceChange24h: -12.3,
-    marketCap: 89.2, volume24h: 31.8,
-    graduationProgress: 100, status: "graduated",
-    creator: "5xM2nCfR7nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "1d", color: C[2], sparkData: spark(3, false),
-  },
-  {
-    id: "4", name: "MoonBoy", symbol: "MOON",
-    price: 0.000042, priceChange24h: 5.2,
-    marketCap: 3.6, volume24h: 1.8,
-    graduationProgress: 4, status: "new",
-    creator: "9kT3nGfR2nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "12m", color: C[3], sparkData: spark(4, true),
-  },
-  {
-    id: "5", name: "Sol Ape", symbol: "SOLAPE",
-    price: 0.00123, priceChange24h: 18.7,
-    marketCap: 29.8, volume24h: 8.4,
-    graduationProgress: 35, status: "active",
-    creator: "2mN4pBfR8nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "6h", color: C[4], sparkData: spark(5, true),
-  },
-  {
-    id: "6", name: "Froggy", symbol: "FROG",
-    price: 0.00345, priceChange24h: 67.3,
-    marketCap: 72.4, volume24h: 28.9,
-    graduationProgress: 85, status: "graduating",
-    creator: "8jR5kCfR1nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "8h", color: C[5], sparkData: spark(6, true),
-  },
-  {
-    id: "7", name: "SigmaGrind", symbol: "SIGMA",
-    price: 0.00198, priceChange24h: -4.1,
-    marketCap: 51.3, volume24h: 11.2,
-    graduationProgress: 60, status: "active",
-    creator: "4pL6mDfR9nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "12h", color: C[6], sparkData: spark(7, false),
-  },
-  {
-    id: "8", name: "BasedChad", symbol: "BASED",
-    price: 0.000234, priceChange24h: 231.5,
-    marketCap: 12.8, volume24h: 9.1,
-    graduationProgress: 15, status: "new",
-    creator: "6nM8jBfR5nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "35m", color: C[7], sparkData: spark(8, true),
-  },
-  {
-    id: "9", name: "We All Gonna Make It", symbol: "WAGMI",
-    price: 0.00412, priceChange24h: -8.7,
-    marketCap: 85.0, volume24h: 19.5,
-    graduationProgress: 100, status: "graduated",
-    creator: "1kP7nAfR6nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "2d", color: C[8], sparkData: spark(9, false),
-  },
-  {
-    id: "10", name: "PumpKing", symbol: "PUMP",
-    price: 0.00789, priceChange24h: 24.3,
-    marketCap: 91.2, volume24h: 34.7,
-    graduationProgress: 100, status: "graduated",
-    creator: "7mQ9pCfR3nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "3d", color: C[9], sparkData: spark(10, true),
-  },
-  {
-    id: "11", name: "GigaChad", symbol: "CHAD",
-    price: 0.000089, priceChange24h: 12.0,
-    marketCap: 7.5, volume24h: 3.2,
-    graduationProgress: 9, status: "new",
-    creator: "5jN2mEfR4nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "22m", color: C[10], sparkData: spark(11, true),
-  },
-  {
-    id: "12", name: "RizzLord", symbol: "RIZZ",
-    price: 0.00278, priceChange24h: 55.8,
-    marketCap: 63.1, volume24h: 21.3,
-    graduationProgress: 74, status: "graduating",
-    creator: "3kM4nFfR8nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    createdAgo: "5h", color: C[11], sparkData: spark(12, true),
-  },
-];
+const TOKEN_DECIMALS = 1_000_000;
+const GRADUATION_SOL = DEFAULT_GRADUATION_THRESHOLD.toNumber() / LAMPORTS_PER_SOL;
 
 /* ─── Filter / sort ─── */
 
@@ -159,6 +65,91 @@ export default function Home() {
   const [filter, setFilter] = useState<Filter>("trending");
   const [sort, setSort] = useState<Sort>("mcap");
   const [sortOpen, setSortOpen] = useState(false);
+
+  /* ─── On-chain token data ─── */
+  const { client, connection } = useTokenLaunchpad();
+  const [onChainTokens, setOnChainTokens] = useState<TokenData[]>([]);
+  const [loadingTokens, setLoadingTokens] = useState(true);
+
+  useEffect(() => {
+    async function fetchTokens() {
+      setLoadingTokens(true);
+      try {
+        // Create a read-only client if wallet not connected
+        let fetchClient = client;
+        if (!fetchClient) {
+          const { TokenLaunchpadClient } = await import("@sdk/client");
+          const { AnchorProvider } = await import("@coral-xyz/anchor");
+          const readOnlyProvider = new AnchorProvider(
+            connection,
+            { publicKey: PublicKey.default, signTransaction: async (tx: any) => tx, signAllTransactions: async (txs: any) => txs } as any,
+            { commitment: "confirmed" },
+          );
+          fetchClient = new TokenLaunchpadClient(readOnlyProvider);
+        }
+
+        const accounts = await fetchClient.listAllBondingCurves();
+        const mints = accounts.map((acc) => acc.account.mint.toBase58());
+
+        // Fetch metadata in parallel
+        const metadataMap = await fetchBatchMetadata(connection, mints);
+
+        // Filter out tokens without metadata URI (broken/test tokens)
+        const withMetadata = accounts.filter((acc) => {
+          const meta = metadataMap.get(acc.account.mint.toBase58());
+          return meta && meta.uri;
+        });
+
+        const mapped: TokenData[] = withMetadata.map((acc) => {
+          const bc = acc.account;
+          const mintAddr = bc.mint.toBase58();
+          const meta = metadataMap.get(mintAddr);
+
+          const vSol = bc.virtualSol.toNumber() / LAMPORTS_PER_SOL;
+          const vToken = bc.virtualToken.toNumber() / TOKEN_DECIMALS;
+          const price = vSol / vToken;
+
+          const totalSupply = bc.tokenTotalSupply.toNumber() / TOKEN_DECIMALS;
+          const marketCap = price * totalSupply;
+
+          const realSol = bc.realSolReserves.toNumber() / LAMPORTS_PER_SOL;
+          const gradPct = Math.min(100, (realSol / GRADUATION_SOL) * 100);
+
+          let status: TokenData["status"] = "active";
+          if (bc.completed) status = "graduated";
+          else if (gradPct > 75) status = "graduating";
+          else if (gradPct < 10) status = "new";
+
+          const hash = mintAddr.split("").reduce((a: number, c: string) => a + c.charCodeAt(0), 0);
+
+          return {
+            id: mintAddr,
+            name: meta?.name || `Token ${mintAddr.slice(0, 6)}`,
+            symbol: meta?.symbol || mintAddr.slice(0, 4).toUpperCase(),
+            price,
+            priceChange24h: 0,
+            marketCap,
+            volume24h: 0,
+            graduationProgress: Math.round(gradPct),
+            status,
+            creator: bc.creator.toBase58(),
+            createdAgo: "on-chain",
+            color: meta?.extensions?.color || C[hash % C.length],
+            sparkData: spark(hash, price > 0.00003),
+            image: meta?.image || null,
+          };
+        });
+
+        setOnChainTokens(mapped);
+      } catch (err) {
+        console.error("Failed to fetch tokens:", err);
+        setOnChainTokens([]);
+      } finally {
+        setLoadingTokens(false);
+      }
+    }
+    fetchTokens();
+  }, [client, connection]);
 
   /* ─── Scroll tracking for parallax & transitions ─── */
   const [scrollY, setScrollY] = useState(0);
@@ -215,7 +206,7 @@ export default function Home() {
   );
 
   const tokens = useMemo(() => {
-    let list = [...TOKENS];
+    let list = [...onChainTokens];
 
     if (query) {
       const q = query.toLowerCase();
@@ -248,7 +239,7 @@ export default function Home() {
     }
 
     return list;
-  }, [query, filter, sort]);
+  }, [query, filter, sort, onChainTokens]);
 
   return (
     <div className="relative min-h-screen">
@@ -506,10 +497,19 @@ export default function Home() {
             })}
           </div>
 
-          {tokens.length === 0 && (
+          {loadingTokens && (
+            <div className="py-24 flex flex-col items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-brand" />
+              <p className="text-[13px] text-text-3">Loading tokens from devnet...</p>
+            </div>
+          )}
+
+          {!loadingTokens && tokens.length === 0 && (
             <div className="py-24 text-center">
               <p className="text-[13px] text-text-3">
-                No tokens match your search.
+                {onChainTokens.length === 0
+                  ? "No tokens on-chain yet. Be the first to launch!"
+                  : "No tokens match your search."}
               </p>
             </div>
           )}

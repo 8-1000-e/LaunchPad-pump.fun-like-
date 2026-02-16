@@ -1,4 +1,5 @@
 import { BN } from "@coral-xyz/anchor"
+import { LAMPORTS_PER_SOL , TOKEN_DECIMALS_FACTOR} from "./constants";
 
 export function calculateSellAmount(tokenAmount: BN, virtualSol: BN, virtualToken: BN): BN
 {
@@ -9,6 +10,10 @@ export function calculateSellAmount(tokenAmount: BN, virtualSol: BN, virtualToke
 export function calculateBuyAmount(virtualSol: BN, virtualToken: BN, solAmount: BN): BN
 {
     const amount = virtualToken.mul(solAmount).div(virtualSol.add(solAmount));
-    return amount
+    return amount;
 }
 
+export function getCurrentPrice(virtualSol: BN, virtualTokens: BN): number
+{
+    return (virtualSol.toNumber() * TOKEN_DECIMALS_FACTOR) / (virtualTokens.toNumber() * LAMPORTS_PER_SOL);
+}
