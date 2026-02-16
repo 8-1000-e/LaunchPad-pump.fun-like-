@@ -7,8 +7,8 @@ IMPORTANT: At session start, read all .md files in the /docs/ directory to resto
 ## Current State
 
 - **Branch**: main (+ `programs` branch = subtree of `programs/token-lp/`)
-- **Status**: All instructions complete (trading, referral, migration). Events complete. Security audit fixes complete. `anchor build` passes. Next: tests, SDK, frontend integration.
-- **Last updated**: 2026-02-13
+- **Status**: Program complete. Tests complete (28/28). Creator fees implemented (65%). Tests rewritten to use SDK. SDK bugs documented.
+- **Last updated**: 2026-02-15
 - **Dev server**: `cd app/ && npx next dev --webpack --port 3001` (MUST use --webpack flag, Turbopack hangs with dual lockfiles)
 - **Frontend location**: `/Users/emile/Documents/learn/Dev Journey/Launch/app/`
 - **Backend location**: `/Users/emile/Documents/learn/Dev Journey/Launch/programs/token-lp/`
@@ -34,10 +34,9 @@ IMPORTANT: At session start, read all .md files in the /docs/ directory to resto
 - [x] `utils/math.rs` — calculate_buy_amount + calculate_sell_amount with u128 checked math
 - [x] Cargo.toml — anchor-spl with metadata feature, init-if-needed feature, raydium-cp-swap crate
 - [x] All `mod.rs` files wired with `pub use *`
-- [x] `lib.rs` — all 7 instructions wired
+- [x] `lib.rs` — all 10 instructions wired
 - [x] `anchor build` passes ✅
 - [x] `events.rs` — TradeEvent, CreateEvent, CompleteEvent, MigrateEvent + emit!() in all handlers
-- [ ] Tests (01_admin through 05_migration)
 
 ### Phase 2: Token Launch ✅
 - [x] `create_token.rs` — full handler: init bonding curve, mint_to total supply, CPI create_metadata_accounts_v3, status check, freeze authority revoke, CreateEvent
@@ -54,8 +53,7 @@ IMPORTANT: At session start, read all .md files in the /docs/ directory to resto
 - [x] Referral stats updated on each trade (total_earned, trade_count)
 
 ### Phase 5: Migration ✅
-- [x] `migrate_to_raydium.rs` — full handler: migration fee via sub_lamports, CPI Raydium CPMM initialize, LP token burn (manual deserialization of UncheckedAccount), has_one = authority (admin-only), MigrateEvent
-- [x] Raydium CPMM dependency (`raydium-cp-swap` crate), compiles with Anchor 0.32.1
+- [x] `migrate_to_raydium.rs` — full handler: migration fee via sub_lamports, CPI Raydium CPMM initialize, LP token burn, has_one = authority (admin-only), MigrateEvent
 
 ### Phase 6: Security Audit ✅
 - [x] All critical/high/medium bugs from audit fixed
@@ -67,12 +65,30 @@ IMPORTANT: At session start, read all .md files in the /docs/ directory to resto
 - [x] Rent exemption check in sell
 - [x] withdraw_fees uses CPI transfer with fee_vault signer seeds (not sub_lamports on SystemAccount)
 
-### Phase 7: Post-MVP ← CURRENT
-- [ ] Tests (01_admin through 05_migration)
-- [ ] SDK (`sdk/src/client.ts`, `math.ts`, `pda.ts`, `types.ts`, `constants.ts`)
-- [ ] Minor: `creator_share_bps` stored in Global but never used (incomplete feature)
-- [ ] Minor: No `close` instruction to reclaim bonding curve rent after migration
-- [ ] Minor: `open_time = now` in migrate makes Raydium pool snipable immediately
+### Phase 7: Creator Fees + SDK Tests ✅
+- [x] Creator fees implemented: 65% of trade fees go to token creator (`creator_share_bps = 6500`)
+- [x] Three-way fee split: creator (65%) → referral (10% of remainder) → protocol (remainder)
+- [x] `creator_account: SystemAccount` added to Buy/Sell structs with `constraint = creator_account.key() == bonding_curve.creator`
+- [x] Tests rewritten using SDK (`TokenLaunchpadClient`) — 28/28 passing
+- [x] SDK bugs documented in pod DISCUSSION.md (5 bugs found)
+- [x] Migration status check added (`require!` ProgramPaused)
+- [x] Safe timestamp cast (`u64::try_from` instead of `as u64`)
+
+### Phase 8: SDK (Handmade by Emile) ✅
+- [x] `sdk/src/constants.ts` — Program ID, seeds, defaults (BN strings for large numbers)
+- [x] `sdk/src/types.ts` — Global, BondingCurve, Referral interfaces + ProgramStatus type
+- [x] `sdk/src/pda.ts` — 4 PDA derivers + getMetadataPda
+- [x] `sdk/src/math.ts` — calculateBuyAmount, calculateSellAmount (constant product)
+- [x] `sdk/src/client.ts` — TokenLaunchpadClient: 10 instructions + 3 fetch + error parsing
+- [x] `sdk/src/index.ts` — barrel export
+- [x] All 5 SDK bugs fixed (error parsing, package.json, export typo, ATA, double fetch)
+- [x] SDK compiles clean (`npx tsc --noEmit --esModuleInterop --resolveJsonModule --skipLibCheck`)
+
+### Phase 9: Next Steps
+- [ ] Migration tests (05_migration.test.ts — currently empty)
+- [ ] Close instruction (reclaim bonding curve rent after migration)
+- [ ] Delayed open_time in migration (anti-snipe for Raydium pool)
+- [ ] Connect frontend to real program (devnet deploy)
 
 ## Task Progress — Frontend
 
@@ -91,6 +107,22 @@ IMPORTANT: At session start, read all .md files in the /docs/ directory to resto
 - [x] Unicorn Studio 3D particle background for token grid section (gold-tinted, no mouse interaction)
 - [x] Cross-fade transition: hero 3D bonding curve fades out → Unicorn Studio fades in on scroll
 - [ ] Clean up orphan files: `how-it-works.tsx`, `activity-ticker.tsx`
+
+## Fee Architecture
+
+- `trade_fee_bps = 100` (1% of SOL on every buy/sell)
+- `creator_share_bps = 6500` (65% of fee → token creator)
+- `referral_share_bps = 1000` (10% of remaining fee → referrer, if present)
+- Protocol gets the remainder
+- Example: 1 SOL trade → 0.01 SOL fee → 0.0065 creator, 0.00035 referral, 0.00315 protocol
+
+## SDK Bugs (Found 2026-02-15)
+
+1. ~~**CRITICAL**: Error parser broken for non-default providers~~ → **FIXED**: `parseError()` + `sendTx()` wrapper extracts AnchorError from transaction logs
+2. ~~**MEDIUM**: `package.json` was empty~~ → **FIXED** by Ganymede
+3. ~~**MEDIUM**: `index.ts` exports `"./clients"`~~ → **FIXED**: corrected to `"./client"`
+4. ~~**LOW**: `allowOwnerOffCurve` inconsistency~~ → **FIXED**: Anchor 0.32 auto-resolves ATAs, no longer passed manually
+5. ~~**LOW**: Double bonding curve fetch~~ → **FIXED**: `buyToken`/`sellToken` accept optional `creator?: PublicKey` param
 
 ## Security Audit Summary (2026-02-11)
 
@@ -113,7 +145,7 @@ IMPORTANT: At session start, read all .md files in the /docs/ directory to resto
 - **Anchor 0.32.1**: Kept the version from `anchor init`
 - **InitSpace over size_of**: `#[derive(InitSpace)]` + `INIT_SPACE`
 - **Handler pattern**: Each instruction has `pub fn _handler(ctx) -> Result<()>` + `#[derive(Accounts)]` struct
-- **Program ID**: `HY3g1uQL2Zki1aFVJvJYZnMjZNveuMJhU22f9BucN3X`
+- **Program ID**: `GzXpRdSJRrd9qqbigtawUFAqjf39inX5Zju7sZDSpdJx`
 - **Multiple error enums**: AdminError, MathError, TradeError (per domain)
 - **create_and_buy for anti-snipe**: Atomic create+buy prevents snipers
 - **PDA signer seeds pattern**: `let mint_key = ...; let seeds = &[SEED, mint_key.as_ref(), &[bump]]; let binding = [signer_seeds]; ... &binding`
@@ -123,6 +155,7 @@ IMPORTANT: At session start, read all .md files in the /docs/ directory to resto
 - **Sell fees from PDA**: In sell, ALL SOL transfers (to seller + fees) come from bonding curve PDA with `CpiContext::new_with_signer`
 - **No slippage in create_and_buy**: First buyer, price is deterministic
 - **raydium-cp-swap crate**: Compatible with Anchor 0.32.1 despite being built for 0.29
+- **Creator fees (65%)**: Token creator receives `creator_share_bps` of every trade fee. Remaining split between referral and protocol.
 - **NEVER mention Claude in commits**
 
 ## Key Decisions — Frontend
@@ -145,42 +178,35 @@ IMPORTANT: At session start, read all .md files in the /docs/ directory to resto
 
 ## Critical File Paths
 
-### Backend (token-lp/programs/token-lp/src/)
-- `lib.rs:15-69` — #[program] module with 7 instructions wired
-- `constants.rs` — all PDA seeds + defaults (MIGRATION_FEE = 0.5 SOL)
+### Backend (programs/token-lp/src/)
+- `lib.rs` — #[program] module with 10 instructions wired
+- `constants.rs` — all PDA seeds + defaults (MIGRATION_FEE = 0.5 SOL, CREATOR_SHARE_BPS = 6500)
 - `errors.rs` — AdminError + MathError + TradeError enums
 - `state/global.rs` — Global struct + ProgramStatus enum
-- `state/bonding_curve.rs` — BondingCurve struct (virtual_sol/token, real_sol/token, completed, migrated)
+- `state/bonding_curve.rs` — BondingCurve struct (virtual_sol/token, real_sol/token, completed, migrated, creator)
 - `state/referral.rs` — Referral struct (referrer, total_earned, trade_count, bump)
-- `instructions/admin/initialize.rs` — handler + Initialize accounts
-- `instructions/admin/update_config.rs` — handler with Option<T> params
-- `instructions/admin/withdraw_fees.rs` — handler with checked_sub rent protection
-- `instructions/launch/create_token.rs` — full handler with status check
-- `instructions/launch/create_and_buy.rs` — full handler: create + atomic buy
-- `instructions/trade/buy.rs` — full handler with referral integration (Option<Account<Referral>>)
-- `instructions/trade/sell.rs` — full handler: mirror of buy, PDA signs all SOL transfers
-- `instructions/referral/register_referral.rs` — creates Referral PDA
-- `instructions/referral/claim_fees.rs` — withdraw from Referral PDA
-- `instructions/migration/migrate_to_raydium.rs` — struct partially written ← CURRENT
+- `instructions/trade/buy.rs` — handler with 3-way fee split (creator + referral + protocol) + `creator_account` in accounts
+- `instructions/trade/sell.rs` — mirror of buy, PDA signs all SOL transfers, 3-way fee split
+- `instructions/launch/create_and_buy.rs` — create + atomic buy, skips creator self-transfer
+- `instructions/migration/migrate_to_raydium.rs` — Raydium CPMM CPI, status check, safe timestamp cast
 - `utils/math.rs` — calculate_buy_amount + calculate_sell_amount
 
-### Frontend (Launch/app/src/)
-- `components/wallet-provider.tsx` — Solana wallet ConnectionProvider + WalletProvider (Phantom, Solflare, devnet)
-- `components/bonding-curve-3d.tsx` — vanilla Three.js 3D chart
-- `components/hero.tsx` — desktop: immersive 3D + scroll fade/blur/zoom; mobile: compact text-only
-- `components/navbar.tsx` — sticky navbar with real wallet connection (modal + dropdown + balance)
-- `components/footer.tsx` — 4-column footer with Solana badge
-- `components/token-card.tsx` — token grid card with sparkline
-- `components/token-chart.tsx` — TradingView lightweight-charts v5 area chart with timeframes
-- `components/trade-form.tsx` — buy/sell form with particle burst
-- `components/trade-history.tsx` — live simulated trade history table
-- `components/ticker-price.tsx` — odometer-style digit rolling price animation
-- `components/bonding-curve-mini.tsx` — SVG mini bonding curve with pulsing dot
-- `components/button-particles.tsx` — canvas particle burst hook
-- `components/sparkline.tsx` — inline SVG sparkline for token cards
-- `app/layout.tsx` — fonts, metadata, WalletProviderWrapper wrapping children
-- `app/page.tsx` — home page with scroll-snap, Unicorn Studio background, cross-fade
-- `app/token/[id]/page.tsx` — token detail + trade
-- `app/create/page.tsx` — create token form
-- `app/leaderboard/page.tsx` — 3 tabs, podium, tables
-- `app/profile/[address]/page.tsx` — profile with heatmap, 4 tabs, referral dashboard (own profile)
+### SDK (sdk/src/)
+- `client.ts` — TokenLaunchpadClient class (all instructions as methods)
+- `pda.ts` — PDA derivation helpers
+- `math.ts` — buy/sell amount calculation (mirrors utils/math.rs)
+- `constants.ts` — default values matching constants.rs
+- `types.ts` — TypeScript types
+
+### Tests (tests/)
+- `helpers/setup.ts` — provider, adminClient, clientFor(keypair), expectRevert()
+- `helpers/index.ts` — re-exports from setup + SDK (pda, math, constants)
+- `01_admin.test.ts` — initialize, update_config, withdraw_fees
+- `02_launch.test.ts` — create_token, create_and_buy_token
+- `03_trade.test.ts` — buy, sell, round-trip, graduation, SDK math verification
+- `04_referral.test.ts` — register, buy-with-referral (3-way fee split), claim, auth checks
+
+### Frontend (app/src/)
+- `components/wallet-provider.tsx` — Solana wallet ConnectionProvider + WalletProvider
+- `components/navbar.tsx` — sticky navbar with real wallet connection
+- `app/page.tsx` — home page with scroll-snap, cross-fade

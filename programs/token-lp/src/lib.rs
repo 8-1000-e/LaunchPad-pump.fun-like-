@@ -10,7 +10,7 @@ pub mod utils;
 use instructions::*;
 use state::*;
 
-declare_id!("HY3g1uQL2Zki1aFVJvJYZnMjZNveuMJhU22f9BucN3X");
+declare_id!("GzXpRdSJRrd9qqbigtawUFAqjf39inX5Zju7sZDSpdJx");
 
 #[program]
 pub mod token_lp {

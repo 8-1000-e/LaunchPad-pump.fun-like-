@@ -209,3 +209,25 @@
 **Context**: Frontend was originally in `token-lp/app/` alongside the Anchor program.
 **Decision**: Frontend moved to `/Users/emile/Documents/learn/Dev Journey/Launch/app/`. Backend stays in `token-lp/`.
 **Rationale**: User reorganized project structure. Both directories have their own CLAUDE.md and docs/.
+
+## 2026-02-15 — Creator fee: 65% of trade fees to token creator
+**Context**: `creator_share_bps` existed in Global config but was never used — 100% of fees went to `fee_vault`.
+**Decision**: Implement 3-way fee split: creator (65%) → referral (10% of remainder) → protocol (rest). Creator gets their share first, then remaining is split.
+**Rationale**: Token creators are incentivized to promote their tokens. 65% is generous but aligns with pump.fun-style tokenomics where creator engagement drives volume.
+**Alternatives considered**: 30% (too low per Emile), 50/50 split, percentage of total volume instead of fees.
+
+## 2026-02-15 — Skip creator self-transfer in create_and_buy
+**Context**: In `create_and_buy`, the creator is the signer who also pays fees.
+**Decision**: Calculate creator_fee but skip the actual transfer (creator would pay themselves).
+**Rationale**: Saves compute units. The math still uses `remaining_fee` (after creator share) for referral/protocol split, so the fee distribution is consistent.
+
+## 2026-02-15 — Tests use SDK client, not raw Anchor program calls
+**Context**: Tests were calling `program.methods.xxx().rpc()` directly.
+**Decision**: Rewrite all tests to use `TokenLaunchpadClient` from `sdk/src/client.ts` via `clientFor(keypair)` helper.
+**Rationale**: (1) Surfaces SDK bugs — found 5 through this approach. (2) Tests serve as SDK integration tests. (3) Tests mirror how the frontend will use the SDK.
+
+## 2026-02-15 — SDK error parsing: parseError() + sendTx() wrapper
+**Context**: Anchor 0.32 `Program` doesn't parse errors for non-default providers → "Unknown action 'undefined'".
+**Decision**: SDK wraps all `.rpc()` calls in `sendTx()` which catches errors and passes them through `parseError()`. `parseError()` extracts `AnchorError` from `SendTransactionError.logs` using `AnchorError.parse(logs)`.
+**Rationale**: Frontend needs proper error codes (e.g., `SlippageExceeded`) for UX. This is a client-side fix for an Anchor bug.
+**Skill created**: `~/.claude/skills/brain-dump/extracted/anchor-sdk-error-parsing-wrapper/SKILL.md`

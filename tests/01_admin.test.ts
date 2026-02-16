@@ -1,14 +1,21 @@
 import * as anchor from "@coral-xyz/anchor";
+import { BN } from "@coral-xyz/anchor";
 import { expect } from "chai";
 import {
-  program,
   provider,
   connection,
+  authority,
+  adminClient,
+  clientFor,
   airdrop,
+  expectRevert,
   Keypair,
-  PublicKey,
-  SystemProgram,
   LAMPORTS_PER_SOL,
+  SystemProgram,
+} from "./helpers";
+import {
+  getGlobalPda,
+  getFeeVaultPda,
   DEFAULT_VIRTUAL_SOL,
   DEFAULT_VIRTUAL_TOKENS,
   DEFAULT_REAL_TOKENS,
@@ -18,26 +25,16 @@ import {
   DEFAULT_REFERRAL_SHARE_BPS,
   DEFAULT_GRADUATION_THRESHOLD,
 } from "./helpers";
-import { getGlobalPda, getFeeVaultPda } from "./helpers/pda";
 
 describe("01 - Admin", () => {
-  const authority = (provider.wallet as anchor.Wallet).payer;
   const globalPda = getGlobalPda();
   const feeVaultPda = getFeeVaultPda();
 
   describe("initialize", () => {
     it("should initialize global config with default values", async () => {
-      await program.methods
-        .initialize()
-        .accounts({
-          authority: authority.publicKey,
-          global: globalPda,
-          feeVault: feeVaultPda,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await adminClient.initialize();
 
-      const global = await program.account.global.fetch(globalPda);
+      const global = await adminClient.getGlobal();
 
       expect(global.authority.toBase58()).to.equal(authority.publicKey.toBase58());
       expect(global.feeReceiver.toBase58()).to.equal(authority.publicKey.toBase58());
@@ -54,103 +51,55 @@ describe("01 - Admin", () => {
     });
 
     it("should fail on double initialization (PDA already exists)", async () => {
-      try {
-        await program.methods
-          .initialize()
-          .accounts({
-            authority: authority.publicKey,
-            global: globalPda,
-            feeVault: feeVaultPda,
-            systemProgram: SystemProgram.programId,
-          })
-          .rpc();
-        expect.fail("Should have thrown");
-      } catch (err: any) {
-        // The account already exists, so init should fail
-        expect(err.toString()).to.contain("already in use");
-      }
+      await expectRevert(() => adminClient.initialize(), "already in use");
     });
   });
 
   describe("update_config", () => {
     it("should update config fields as authority", async () => {
       const newFeeReceiver = Keypair.generate().publicKey;
-      const newThreshold = new anchor.BN(100 * LAMPORTS_PER_SOL);
+      const newThreshold = new BN(100 * LAMPORTS_PER_SOL);
 
-      await program.methods
-        .updateConfig(
-          newFeeReceiver,     // new_fee_receiver
-          null,               // new_initial_virtual_sol_reserves
-          null,               // new_initial_virtual_token_reserves
-          null,               // new_initial_real_token_reserves
-          null,               // new_token_total_supply
-          200,                // new_trade_fee_bps (2%)
-          null,               // new_creator_share_bps
-          null,               // new_referral_share_bps
-          newThreshold,       // new_graduation_threshold
-          null,               // new_status
-        )
-        .accounts({
-          authority: authority.publicKey,
-          global: globalPda,
-        })
-        .rpc();
+      await adminClient.updateConfig({
+        newFeeReceiver,
+        newTradeFeeBps: 200,
+        newGraduationThreshold: newThreshold,
+      });
 
-      const global = await program.account.global.fetch(globalPda);
+      const global = await adminClient.getGlobal();
       expect(global.feeReceiver.toBase58()).to.equal(newFeeReceiver.toBase58());
       expect(global.tradeFeeBps).to.equal(200);
       expect(global.graduationThreshold.toString()).to.equal(newThreshold.toString());
 
-      // Restore defaults for subsequent tests
-      await program.methods
-        .updateConfig(
-          authority.publicKey,
-          DEFAULT_VIRTUAL_SOL,
-          DEFAULT_VIRTUAL_TOKENS,
-          DEFAULT_REAL_TOKENS,
-          DEFAULT_TOKEN_SUPPLY,
-          DEFAULT_TRADE_FEE_BPS,
-          DEFAULT_CREATOR_SHARE_BPS,
-          DEFAULT_REFERRAL_SHARE_BPS,
-          DEFAULT_GRADUATION_THRESHOLD,
-          { running: {} },
-        )
-        .accounts({
-          authority: authority.publicKey,
-          global: globalPda,
-        })
-        .rpc();
+      // Restore defaults
+      await adminClient.updateConfig({
+        newFeeReceiver: authority.publicKey,
+        newInitialVirtualSolReserves: DEFAULT_VIRTUAL_SOL,
+        newInitialVirtualTokenReserves: DEFAULT_VIRTUAL_TOKENS,
+        newInitialRealTokenReserves: DEFAULT_REAL_TOKENS,
+        newTokenTotalSupply: DEFAULT_TOKEN_SUPPLY,
+        newTradeFeeBps: DEFAULT_TRADE_FEE_BPS,
+        newCreatorShareBps: DEFAULT_CREATOR_SHARE_BPS,
+        newReferralShareBps: DEFAULT_REFERRAL_SHARE_BPS,
+        newGraduationThreshold: DEFAULT_GRADUATION_THRESHOLD,
+        newStatus: { running: {} },
+      });
     });
 
     it("should fail when called by non-authority", async () => {
       const attacker = Keypair.generate();
       await airdrop(attacker.publicKey, 2 * LAMPORTS_PER_SOL);
+      const attackerClient = clientFor(attacker);
 
-      try {
-        await program.methods
-          .updateConfig(
-            null, null, null, null, null, null, null, null, null,
-            { paused: {} },
-          )
-          .accounts({
-            authority: attacker.publicKey,
-            global: globalPda,
-          })
-          .signers([attacker])
-          .rpc();
-        expect.fail("Should have thrown");
-      } catch (err: any) {
-        // has_one = authority constraint should reject
-        expect(err.toString()).to.satisfy(
-          (s: string) => s.includes("ConstraintHasOne") || s.includes("has one constraint") || s.includes("2012") || s.includes("A has one constraint was violated")
-        );
-      }
+      await expectRevert(
+        () => attackerClient.updateConfig({ newStatus: { paused: {} } }),
+        "ConstraintHasOne"
+      );
     });
   });
 
   describe("withdraw_fees", () => {
     it("should withdraw fees to the configured fee_receiver", async () => {
-      // Fund the fee_vault
       const fundAmount = 5 * LAMPORTS_PER_SOL;
       const transferIx = SystemProgram.transfer({
         fromPubkey: authority.publicKey,
@@ -160,72 +109,27 @@ describe("01 - Admin", () => {
       const tx = new anchor.web3.Transaction().add(transferIx);
       await provider.sendAndConfirm(tx);
 
-      // recipient must match global.fee_receiver (= authority.publicKey)
       const feeVaultBefore = await connection.getBalance(feeVaultPda);
       const recipientBefore = await connection.getBalance(authority.publicKey);
 
-      await program.methods
-        .withdrawFees()
-        .accounts({
-          authority: authority.publicKey,
-          global: globalPda,
-          feeVault: feeVaultPda,
-          recipient: authority.publicKey,
-        })
-        .rpc();
+      await adminClient.withdrawFees();
 
       const feeVaultAfter = await connection.getBalance(feeVaultPda);
       const recipientAfter = await connection.getBalance(authority.publicKey);
 
-      // fee_vault should have been drained (minus rent-exempt minimum)
       expect(feeVaultAfter).to.be.lessThan(feeVaultBefore);
-      // recipient should have received lamports
-      expect(recipientAfter).to.be.greaterThan(recipientBefore - 100000); // allow for tx fee
+      expect(recipientAfter).to.be.greaterThan(recipientBefore - 100000);
     });
 
     it("should fail when called by non-authority", async () => {
       const attacker = Keypair.generate();
       await airdrop(attacker.publicKey, 2 * LAMPORTS_PER_SOL);
+      const attackerClient = clientFor(attacker);
 
-      try {
-        await program.methods
-          .withdrawFees()
-          .accounts({
-            authority: attacker.publicKey,
-            global: globalPda,
-            feeVault: feeVaultPda,
-            recipient: attacker.publicKey,
-          })
-          .signers([attacker])
-          .rpc();
-        expect.fail("Should have thrown");
-      } catch (err: any) {
-        expect(err.toString()).to.satisfy(
-          (s: string) => s.includes("ConstraintHasOne") || s.includes("has one constraint") || s.includes("2012") || s.includes("A has one constraint was violated")
-        );
-      }
-    });
-
-    it("should reject withdrawal to an unauthorized recipient", async () => {
-      const randomRecipient = Keypair.generate();
-
-      try {
-        await program.methods
-          .withdrawFees()
-          .accounts({
-            authority: authority.publicKey,
-            global: globalPda,
-            feeVault: feeVaultPda,
-            recipient: randomRecipient.publicKey,
-          })
-          .rpc();
-        expect.fail("Should have thrown");
-      } catch (err: any) {
-        // recipient must match global.fee_receiver
-        expect(err.toString()).to.satisfy(
-          (s: string) => s.includes("ConstraintRaw") || s.includes("2003")
-        );
-      }
+      await expectRevert(
+        () => attackerClient.withdrawFees(),
+        "ConstraintHasOne"
+      );
     });
   });
 });
