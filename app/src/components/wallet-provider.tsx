@@ -1,5 +1,10 @@
 "use client";
 
+import { Buffer } from "buffer";
+if (typeof window !== "undefined" && !window.Buffer) {
+  window.Buffer = Buffer;
+}
+
 import { useMemo } from "react";
 import {
   ConnectionProvider,
@@ -10,6 +15,7 @@ import {
   PhantomWalletAdapter,
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
+import { ToastProvider } from "./toast";
 
 export function WalletProviderWrapper({
   children,
@@ -26,7 +32,7 @@ export function WalletProviderWrapper({
   return (
     <ConnectionProvider endpoint={endpoint}>
       <WalletProvider wallets={wallets} autoConnect>
-        {children}
+        <ToastProvider>{children}</ToastProvider>
       </WalletProvider>
     </ConnectionProvider>
   );

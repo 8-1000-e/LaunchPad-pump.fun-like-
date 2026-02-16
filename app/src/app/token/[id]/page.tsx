@@ -11,160 +11,25 @@ import {
   ExternalLink,
   TrendingUp,
   BarChart3,
-  Users,
   Layers,
   Activity,
   DollarSign,
-  Globe,
-  MessageCircle,
+  Loader2,
 } from "lucide-react";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { BN } from "@coral-xyz/anchor";
 import { Navbar } from "@/components/navbar";
 import { TokenChart } from "@/components/token-chart";
 import { TradeForm } from "@/components/trade-form";
 import { TradeHistory } from "@/components/trade-history";
 import { TickerPrice } from "@/components/ticker-price";
 import { BondingCurveMini } from "@/components/bonding-curve-mini";
-
-/* ─── Mock token data (lookup by id) ─── */
-
-const C = [
-  "#c9a84c", "#22c55e", "#ef4444", "#3b82f6", "#8b5cf6",
-  "#ec4899", "#f59e0b", "#06b6d4", "#84cc16", "#f97316",
-  "#14b8a6", "#6366f1",
-];
-
-interface TokenInfo {
-  id: string;
-  name: string;
-  symbol: string;
-  price: number;
-  priceChange24h: number;
-  marketCap: number;
-  volume24h: number;
-  graduationProgress: number;
-  status: "new" | "active" | "graduating" | "graduated";
-  creator: string;
-  createdAgo: string;
-  color: string;
-  mint: string;
-  totalSupply: number;
-  holders: number;
-  trades: number;
-  reserveSol: number;
-  description: string;
-  twitter?: string;
-  telegram?: string;
-  website?: string;
-}
-
-const TOKENS: Record<string, TokenInfo> = {
-  "1": {
-    id: "1", name: "Doge Killer", symbol: "DOGEK", price: 0.00234, priceChange24h: 142.5,
-    marketCap: 67.8, volume24h: 23.4, graduationProgress: 79, status: "graduating",
-    creator: "7xK2mBfR3nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "2h",
-    color: C[0], mint: "DGKx9a84cR3nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 342, trades: 1847,
-    reserveSol: 67.15, description: "The ultimate Doge slayer. Community-driven meme token on Solana.",
-    twitter: "dogekiller_sol", telegram: "dogekillersol", website: "https://dogekiller.xyz",
-  },
-  "2": {
-    id: "2", name: "Pepe Solana", symbol: "PEPES", price: 0.000891, priceChange24h: 34.2,
-    marketCap: 42.1, volume24h: 15.7, graduationProgress: 49, status: "active",
-    creator: "3pK9mBfR4nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "4h",
-    color: C[1], mint: "PEPx891cR4nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 189, trades: 923,
-    reserveSol: 41.65, description: "Pepe finds his home on Solana. The greenest frog in DeFi.",
-    twitter: "pepesolana", telegram: "pepesol_chat",
-  },
-  "3": {
-    id: "3", name: "CatWifHat", symbol: "CWH", price: 0.00567, priceChange24h: -12.3,
-    marketCap: 89.2, volume24h: 31.8, graduationProgress: 100, status: "graduated",
-    creator: "5xM2nCfR7nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "1d",
-    color: C[2], mint: "CWHx567cR7nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 1204, trades: 8432,
-    reserveSol: 85, description: "A cat. With a hat. On Solana. What more do you need?",
-    twitter: "catwifhat_sol", website: "https://catwifhat.lol",
-  },
-  "4": {
-    id: "4", name: "MoonBoy", symbol: "MOON", price: 0.000042, priceChange24h: 5.2,
-    marketCap: 3.6, volume24h: 1.8, graduationProgress: 4, status: "new",
-    creator: "9kT3nGfR2nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "12m",
-    color: C[3], mint: "MOOx042cR2nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 23, trades: 47,
-    reserveSol: 3.4, description: "To the moon. No plan B.",
-    telegram: "moonboy_sol",
-  },
-  "5": {
-    id: "5", name: "Sol Ape", symbol: "SOLAPE", price: 0.00123, priceChange24h: 18.7,
-    marketCap: 29.8, volume24h: 8.4, graduationProgress: 35, status: "active",
-    creator: "2mN4pBfR8nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "6h",
-    color: C[4], mint: "SAPx123cR8nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 156, trades: 634,
-    reserveSol: 29.75, description: "Apes together strong. Solana edition.",
-    twitter: "solape_nft", telegram: "solape_community", website: "https://solape.io",
-  },
-  "6": {
-    id: "6", name: "Froggy", symbol: "FROG", price: 0.00345, priceChange24h: 67.3,
-    marketCap: 72.4, volume24h: 28.9, graduationProgress: 85, status: "graduating",
-    creator: "8jR5kCfR1nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "8h",
-    color: C[5], mint: "FRGx345cR1nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 487, trades: 2341,
-    reserveSol: 72.25, description: "Ribbit. The frog that refuses to stay small.",
-    twitter: "froggy_sol",
-  },
-  "7": {
-    id: "7", name: "SigmaGrind", symbol: "SIGMA", price: 0.00198, priceChange24h: -4.1,
-    marketCap: 51.3, volume24h: 11.2, graduationProgress: 60, status: "active",
-    creator: "4pL6mDfR9nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "12h",
-    color: C[6], mint: "SIGx198cR9nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 298, trades: 1103,
-    reserveSol: 51.0, description: "Stay on your grind. Sigma mindset, sigma gains.",
-  },
-  "8": {
-    id: "8", name: "BasedChad", symbol: "BASED", price: 0.000234, priceChange24h: 231.5,
-    marketCap: 12.8, volume24h: 9.1, graduationProgress: 15, status: "new",
-    creator: "6nM8jBfR5nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "35m",
-    color: C[7], mint: "BSDx234cR5nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 78, trades: 312,
-    reserveSol: 12.75, description: "Based and redpilled. The chad token of Solana.",
-  },
-  "9": {
-    id: "9", name: "We All Gonna Make It", symbol: "WAGMI", price: 0.00412, priceChange24h: -8.7,
-    marketCap: 85.0, volume24h: 19.5, graduationProgress: 100, status: "graduated",
-    creator: "1kP7nAfR6nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "2d",
-    color: C[8], mint: "WGMx412cR6nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 2103, trades: 12847,
-    reserveSol: 85.0, description: "We're all gonna make it. The OG community token.",
-    twitter: "wagmi_sol", telegram: "wagmi_community", website: "https://wagmi.gg",
-  },
-  "10": {
-    id: "10", name: "PumpKing", symbol: "PUMP", price: 0.00789, priceChange24h: 24.3,
-    marketCap: 91.2, volume24h: 34.7, graduationProgress: 100, status: "graduated",
-    creator: "7mQ9pCfR3nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "3d",
-    color: C[9], mint: "PMPx789cR3nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 3421, trades: 18923,
-    reserveSol: 85.0, description: "The king of pumps. First to graduate on LAUNCH.",
-    twitter: "pumpking_sol", website: "https://pumpking.fun",
-  },
-  "11": {
-    id: "11", name: "GigaChad", symbol: "CHAD", price: 0.000089, priceChange24h: 12.0,
-    marketCap: 7.5, volume24h: 3.2, graduationProgress: 9, status: "new",
-    creator: "5jN2mEfR4nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "22m",
-    color: C[10], mint: "CHDx089cR4nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 31, trades: 89,
-    reserveSol: 7.65, description: "Giga energy. Giga gains. Accept no substitutes.",
-  },
-  "12": {
-    id: "12", name: "RizzLord", symbol: "RIZZ", price: 0.00278, priceChange24h: 55.8,
-    marketCap: 63.1, volume24h: 21.3, graduationProgress: 74, status: "graduating",
-    creator: "3kM4nFfR8nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr", createdAgo: "5h",
-    color: C[11], mint: "RIZx278cR8nDjY8zQpL4wV9eT6kA5hC1sN2gF8dP3nQr",
-    totalSupply: 1_000_000_000, holders: 412, trades: 1987,
-    reserveSol: 62.9, description: "Unmatched rizz. The most charismatic token on-chain.",
-    twitter: "rizzlord_sol", telegram: "rizzlord_chat",
-  },
-};
+import { useTokenLaunchpad } from "@/hooks/use-token-launchpad";
+import { useTokenMetadata } from "@/hooks/use-token-metadata";
+import { useBondingCurveLive } from "@/hooks/use-bonding-curve-live";
+import { DEFAULT_GRADUATION_THRESHOLD } from "@sdk/constants";
+import type { BondingCurve } from "@sdk/types";
 
 /* ─── Helpers ─── */
 
@@ -176,6 +41,51 @@ function formatNum(n: number) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
   return n.toLocaleString();
+}
+
+function formatPrice(p: number): string {
+  if (p === 0) return "0";
+  if (p >= 1) return p.toFixed(4);
+  if (p >= 0.001) return p.toFixed(6);
+  // Very small — show significant digits
+  const str = p.toFixed(20);
+  const dot = str.indexOf(".");
+  for (let i = dot + 1; i < str.length; i++) {
+    if (str[i] !== "0") {
+      return p.toFixed(Math.min(i - dot + 3, 14));
+    }
+  }
+  return p.toFixed(10);
+}
+
+const TOKEN_DECIMALS = 1_000_000; // 10^6
+const GRADUATION_SOL =
+  DEFAULT_GRADUATION_THRESHOLD.toNumber() / LAMPORTS_PER_SOL;
+
+function computePrice(bc: BondingCurve): number {
+  const vSol = bc.virtualSol.toNumber() / LAMPORTS_PER_SOL;
+  const vToken = bc.virtualToken.toNumber() / TOKEN_DECIMALS;
+  return vSol / vToken;
+}
+
+function computeGraduation(bc: BondingCurve): number {
+  const realSol = bc.realSolReserves.toNumber() / LAMPORTS_PER_SOL;
+  return Math.min(100, (realSol / GRADUATION_SOL) * 100);
+}
+
+function computeStatus(
+  bc: BondingCurve,
+  gradPct: number,
+): "new" | "active" | "graduating" | "graduated" {
+  if (bc.completed) return "graduated";
+  if (gradPct > 75) return "graduating";
+  if (gradPct < 10) return "new";
+  return "active";
+}
+
+function computeMarketCap(bc: BondingCurve, price: number): number {
+  const totalSupply = bc.tokenTotalSupply.toNumber() / TOKEN_DECIMALS;
+  return price * totalSupply;
 }
 
 /* ─── Status badge ─── */
@@ -232,6 +142,17 @@ function StatCard({
   );
 }
 
+/* ─── Default color based on mint address ─── */
+const COLORS = [
+  "#c9a84c", "#22c55e", "#ef4444", "#3b82f6", "#8b5cf6",
+  "#ec4899", "#f59e0b", "#06b6d4", "#84cc16", "#f97316",
+  "#14b8a6", "#6366f1",
+];
+function mintColor(mint: string): string {
+  const hash = mint.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  return COLORS[hash % COLORS.length];
+}
+
 /* ─── Page ─── */
 
 export default function TokenDetailPage({
@@ -240,39 +161,90 @@ export default function TokenDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const token = TOKENS[id];
+  const { client, connection } = useTokenLaunchpad();
+
+  const [bondingCurve, setBondingCurve] = useState<BondingCurve | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Live WebSocket updates
+  const liveBondingCurve = useBondingCurveLive(id, bondingCurve);
+  // Use live data when available, fallback to initial fetch
+  const activeCurve = liveBondingCurve || bondingCurve;
+
+  // Metaplex metadata
+  const { metadata } = useTokenMetadata(id);
+  const tokenName = metadata?.name || `Token ${id.slice(0, 6)}`;
+  const tokenSymbol = metadata?.symbol || id.slice(0, 4).toUpperCase();
+  const tokenImage = metadata?.image || null;
+  const tokenDescription = metadata?.description || null;
+  const tokenExtensions = metadata?.extensions;
+
   const [mintCopied, setMintCopied] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
 
-  /* ─── Live price simulation ─── */
-  const [livePrice, setLivePrice] = useState(token?.price ?? 0);
+  /* ─── Fetch bonding curve data ─── */
+  useEffect(() => {
+    async function fetchData() {
+      setLoading(true);
+      setError(null);
+      try {
+        const mintPk = new PublicKey(id);
+
+        // Try fetching via client first, fallback to raw connection
+        if (client) {
+          const bc = await client.getBondingCurve(mintPk);
+          setBondingCurve(bc);
+        } else {
+          // Without a wallet we can still read accounts using a read-only provider
+          // For now, we need the client — show a message
+          // Actually, let's try to create a minimal read-only setup
+          const { TokenLaunchpadClient } = await import("@sdk/client");
+          const { AnchorProvider } = await import("@coral-xyz/anchor");
+          const readOnlyProvider = new AnchorProvider(
+            connection,
+            { publicKey: PublicKey.default, signTransaction: async (tx: any) => tx, signAllTransactions: async (txs: any) => txs } as any,
+            { commitment: "confirmed" },
+          );
+          const readClient = new TokenLaunchpadClient(readOnlyProvider);
+          const bc = await readClient.getBondingCurve(mintPk);
+          setBondingCurve(bc);
+        }
+
+        // Metadata is handled by useTokenMetadata hook
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : "Failed to load token";
+        setError(message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, [id, client, connection]);
+
+  /* ─── Real price from bonding curve ─── */
+  const price = activeCurve ? computePrice(activeCurve) : 0;
+  const prevPriceRef = useRef(0);
   const [priceFlash, setPriceFlash] = useState<"up" | "down" | null>(null);
+
+  useEffect(() => {
+    if (price > 0 && prevPriceRef.current > 0 && price !== prevPriceRef.current) {
+      setPriceFlash(price > prevPriceRef.current ? "up" : "down");
+      const t = setTimeout(() => setPriceFlash(null), 400);
+      prevPriceRef.current = price;
+      return () => clearTimeout(t);
+    }
+    if (price > 0) prevPriceRef.current = price;
+  }, [price]);
 
   /* ─── Graduation heat particles ─── */
   const heatCanvasRef = useRef<HTMLCanvasElement>(null);
+  const gradPct = activeCurve ? computeGraduation(activeCurve) : 0;
+  const status = activeCurve ? computeStatus(activeCurve, gradPct) : "new";
 
-  // Simulate live price ticks
   useEffect(() => {
-    if (!token) return;
-    const interval = setInterval(() => {
-      setLivePrice((prev) => {
-        const change = (Math.random() - 0.42) * prev * 0.015;
-        const next = Math.max(prev * 0.5, prev + change);
-        const dir = next > prev ? "up" : "down";
-        setPriceFlash(dir);
-        setTimeout(() => setPriceFlash(null), 400);
-
-        return next;
-      });
-    }, 1800 + Math.random() * 2400);
-    return () => clearInterval(interval);
-  }, [token]);
-
-  // Graduation heat — floating particles when progress > 75%
-  useEffect(() => {
-    if (!token) return;
-    const pct = (token.reserveSol / 85) * 100;
-    if (pct < 75) return;
+    if (!activeCurve || gradPct < 75) return;
 
     const canvas = heatCanvasRef.current;
     if (!canvas) return;
@@ -282,7 +254,7 @@ export default function TokenDetailPage({
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    const intensity = Math.min(1, (pct - 75) / 25); // 0 at 75%, 1 at 100%
+    const intensity = Math.min(1, (gradPct - 75) / 25);
     const count = Math.floor(12 + intensity * 28);
 
     interface HeatParticle {
@@ -308,17 +280,14 @@ export default function TokenDetailPage({
     let frame: number;
     function animate() {
       ctx!.clearRect(0, 0, canvas!.width, canvas!.height);
-
       for (const p of particles) {
         p.y += p.vy;
         p.wobble += 0.02;
         p.x += Math.sin(p.wobble * p.speed) * 0.4;
-
         if (p.y < -20) {
           p.y = canvas!.height + 10;
           p.x = Math.random() * canvas!.width;
         }
-
         const fadeTop = Math.min(1, p.y / (canvas!.height * 0.3));
         ctx!.globalAlpha = p.opacity * fadeTop;
         ctx!.fillStyle = "#f59e0b";
@@ -326,7 +295,6 @@ export default function TokenDetailPage({
         ctx!.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx!.fill();
       }
-
       frame = requestAnimationFrame(animate);
     }
     frame = requestAnimationFrame(animate);
@@ -341,12 +309,23 @@ export default function TokenDetailPage({
       cancelAnimationFrame(frame);
       ro.disconnect();
     };
-  }, [token]);
+  }, [activeCurve, gradPct]);
 
-  if (!token) {
+  /* ─── Loading state ─── */
+  if (loading) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4">
-        <p className="text-text-3">Token not found.</p>
+        <Loader2 className="h-6 w-6 animate-spin text-brand" />
+        <p className="text-[13px] text-text-3">Loading token data...</p>
+      </div>
+    );
+  }
+
+  /* ─── Error state ─── */
+  if (error || !activeCurve) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4">
+        <p className="text-text-3">{error || "Token not found."}</p>
         <Link href="/" className="text-[13px] text-brand hover:text-brand-bright">
           Back to home
         </Link>
@@ -354,19 +333,24 @@ export default function TokenDetailPage({
     );
   }
 
+  const color = tokenExtensions?.color || mintColor(id);
+  const bannerImage = tokenExtensions?.banner || null;
+  const realSol = activeCurve.realSolReserves.toNumber() / LAMPORTS_PER_SOL;
+  const marketCap = computeMarketCap(activeCurve, price);
+  const totalSupply = activeCurve.tokenTotalSupply.toNumber() / TOKEN_DECIMALS;
+
+  const gradColor =
+    gradPct > 80
+      ? "var(--status-graduating)"
+      : gradPct > 50
+        ? "var(--brand)"
+        : "var(--text-3)";
+
   function handleCopyMint() {
-    navigator.clipboard.writeText(token.mint);
+    navigator.clipboard.writeText(id);
     setMintCopied(true);
     setTimeout(() => setMintCopied(false), 2000);
   }
-
-  const gradReservePct = Math.min(100, (token.reserveSol / 85) * 100);
-  const gradColor =
-    gradReservePct > 80
-      ? "var(--status-graduating)"
-      : gradReservePct > 50
-        ? "var(--brand)"
-        : "var(--text-3)";
 
   return (
     <div className="relative min-h-screen bg-bg">
@@ -388,15 +372,15 @@ export default function TokenDetailPage({
       <canvas
         ref={heatCanvasRef}
         className="pointer-events-none fixed inset-0 z-0"
-        style={{ opacity: token ? Math.min(0.7, ((token.reserveSol / 85) * 100 - 75) / 25 * 0.7) : 0 }}
+        style={{ opacity: Math.max(0, Math.min(0.7, (gradPct - 75) / 25 * 0.7)) }}
       />
 
       {/* ── Graduation heat border glow ── */}
-      {token && token.reserveSol / 85 > 0.75 && (
+      {gradPct > 75 && (
         <div
           className="pointer-events-none fixed inset-0 z-0"
           style={{
-            boxShadow: `inset 0 0 ${60 + ((token.reserveSol / 85) * 100 - 75) * 3}px -20px rgba(245,158,11,${0.05 + ((token.reserveSol / 85) * 100 - 75) / 25 * 0.12})`,
+            boxShadow: `inset 0 0 ${60 + (gradPct - 75) * 3}px -20px rgba(245,158,11,${0.05 + (gradPct - 75) / 25 * 0.12})`,
             animation: "graduating-glow 3s ease-in-out infinite",
           }}
         />
@@ -418,78 +402,78 @@ export default function TokenDetailPage({
           {/* ─── Banner ─── */}
           <div
             className="relative mt-4 h-[160px] w-full overflow-hidden sm:h-[180px]"
-            style={{
-              background: `linear-gradient(135deg, ${token.color}30 0%, ${token.color}10 40%, transparent 70%), linear-gradient(225deg, ${token.color}20 0%, transparent 50%), var(--surface)`,
-            }}
+            style={
+              bannerImage
+                ? { backgroundImage: `url(${bannerImage})`, backgroundSize: "cover", backgroundPosition: "center" }
+                : { background: `linear-gradient(135deg, ${color}30 0%, ${color}10 40%, transparent 70%), linear-gradient(225deg, ${color}20 0%, transparent 50%), var(--surface)` }
+            }
           >
-            {/* Noise pattern on banner */}
-            <div
-              className="absolute inset-0 opacity-[0.08]"
-              style={{
-                backgroundImage:
-                  "radial-gradient(circle, var(--text-3) 0.5px, transparent 0.5px)",
-                backgroundSize: "18px 18px",
-              }}
-            />
-            {/* Gradient orb */}
-            <div
-              className="absolute -right-20 -top-20 h-[250px] w-[250px] rounded-full opacity-20 blur-[80px]"
-              style={{ backgroundColor: token.color }}
-            />
-            <div
-              className="absolute -left-10 bottom-0 h-[150px] w-[300px] rounded-full opacity-10 blur-[60px]"
-              style={{ backgroundColor: token.color }}
-            />
+            {!bannerImage && (
+              <>
+                <div
+                  className="absolute inset-0 opacity-[0.08]"
+                  style={{
+                    backgroundImage:
+                      "radial-gradient(circle, var(--text-3) 0.5px, transparent 0.5px)",
+                    backgroundSize: "18px 18px",
+                  }}
+                />
+                <div
+                  className="absolute -right-20 -top-20 h-[250px] w-[250px] rounded-full opacity-20 blur-[80px]"
+                  style={{ backgroundColor: color }}
+                />
+                <div
+                  className="absolute -left-10 bottom-0 h-[150px] w-[300px] rounded-full opacity-10 blur-[60px]"
+                  style={{ backgroundColor: color }}
+                />
+              </>
+            )}
           </div>
 
           {/* ─── Token Header (overlaps banner) ─── */}
           <div className="relative px-1">
-            {/* Avatar — overlaps banner */}
-            <div
-              className="-mt-10 mb-3 flex h-[72px] w-[72px] shrink-0 items-center justify-center border-[3px] border-bg text-[24px] font-bold text-bg shadow-lg"
-              style={{ backgroundColor: token.color }}
-            >
-              {token.symbol.slice(0, 2)}
-            </div>
+            {tokenImage ? (
+              <img
+                src={tokenImage}
+                alt={tokenName}
+                className="-mt-10 mb-3 h-[72px] w-[72px] shrink-0 border-[3px] border-bg shadow-lg object-cover"
+              />
+            ) : (
+              <div
+                className="-mt-10 mb-3 flex h-[72px] w-[72px] shrink-0 items-center justify-center border-[3px] border-bg text-[24px] font-bold text-bg shadow-lg"
+                style={{ backgroundColor: color }}
+              >
+                {tokenSymbol.slice(0, 2)}
+              </div>
+            )}
 
-            {/* Name + Price row */}
             <div className="flex items-start justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2 min-w-0">
                 <h1 className="font-display text-xl font-bold text-text-1 sm:text-2xl">
-                  {token.name}
+                  {tokenName}
                 </h1>
                 <span className="font-mono text-[14px] text-text-3">
-                  ${token.symbol}
+                  ${tokenSymbol}
                 </span>
-                <StatusBadge status={token.status} />
+                <StatusBadge status={status} />
               </div>
 
-              {/* Price — live ticker */}
               <div className="shrink-0 text-right">
                 <div className="text-xl sm:text-3xl text-text-1">
-                  <TickerPrice price={livePrice} flash={priceFlash} />
+                  <TickerPrice price={price} flash={priceFlash} />
                 </div>
                 <div className="flex items-center justify-end gap-1.5">
                   <span className="text-[11px] text-text-3">SOL</span>
-                  <span
-                    className={`font-mono text-[12px] font-medium ${
-                      token.priceChange24h >= 0 ? "text-buy" : "text-sell"
-                    }`}
-                  >
-                    {token.priceChange24h >= 0 ? "+" : ""}
-                    {token.priceChange24h.toFixed(1)}%
-                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Meta info */}
             <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-text-3">
               <button
                 onClick={handleCopyMint}
                 className="inline-flex items-center gap-1 font-mono transition-colors hover:text-text-2"
               >
-                {shorten(token.mint)}
+                {shorten(id)}
                 {mintCopied ? (
                   <Check className="h-3 w-3 text-buy" />
                 ) : (
@@ -498,55 +482,55 @@ export default function TokenDetailPage({
               </button>
               <span>
                 Created by{" "}
-                <Link href={`/profile/${token.creator}`} className="font-mono text-text-2 hover:text-text-1 transition-colors">
-                  {shorten(token.creator)}
+                <Link href={`/profile/${activeCurve.creator.toBase58()}`} className="font-mono text-text-2 hover:text-text-1 transition-colors">
+                  {shorten(activeCurve.creator.toBase58())}
                 </Link>
               </span>
-              <span>{token.createdAgo} ago</span>
             </div>
 
-            {token.description && (
-              <p className="mt-2 max-w-xl text-[13px] text-text-3 leading-relaxed">
-                {token.description}
+            {/* Description */}
+            {tokenDescription && (
+              <p className="mt-3 text-[13px] leading-relaxed text-text-2 max-w-2xl">
+                {tokenDescription}
               </p>
             )}
 
             {/* Social links */}
-            {(token.twitter || token.telegram || token.website) && (
-              <div className="mt-2 flex items-center gap-2.5">
-                {token.twitter && (
+            {tokenExtensions && (tokenExtensions.twitter || tokenExtensions.telegram || tokenExtensions.website) && (
+              <div className="mt-2 flex items-center gap-3">
+                {tokenExtensions.twitter && (
                   <a
-                    href={`https://x.com/${token.twitter}`}
+                    href={`https://x.com/${tokenExtensions.twitter}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-text-3 transition-colors hover:text-text-1"
-                    title={`@${token.twitter}`}
+                    className="inline-flex items-center gap-1 text-[11px] text-text-3 hover:text-text-1 transition-colors"
                   >
-                    <svg viewBox="0 0 24 24" className="h-[15px] w-[15px] fill-current">
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
                       <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                     </svg>
+                    @{tokenExtensions.twitter}
                   </a>
                 )}
-                {token.telegram && (
+                {tokenExtensions.telegram && (
                   <a
-                    href={`https://t.me/${token.telegram}`}
+                    href={tokenExtensions.telegram.startsWith("http") ? tokenExtensions.telegram : `https://${tokenExtensions.telegram}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-text-3 transition-colors hover:text-text-1"
-                    title={token.telegram}
+                    className="inline-flex items-center gap-1 text-[11px] text-text-3 hover:text-text-1 transition-colors"
                   >
-                    <MessageCircle className="h-[15px] w-[15px]" />
+                    <ExternalLink className="h-3 w-3" />
+                    Telegram
                   </a>
                 )}
-                {token.website && (
+                {tokenExtensions.website && (
                   <a
-                    href={token.website}
+                    href={tokenExtensions.website.startsWith("http") ? tokenExtensions.website : `https://${tokenExtensions.website}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-text-3 transition-colors hover:text-text-1"
-                    title={token.website}
+                    className="inline-flex items-center gap-1 text-[11px] text-text-3 hover:text-text-1 transition-colors"
                   >
-                    <Globe className="h-[15px] w-[15px]" />
+                    <ExternalLink className="h-3 w-3" />
+                    Website
                   </a>
                 )}
               </div>
@@ -559,7 +543,7 @@ export default function TokenDetailPage({
             <div className="space-y-6 min-w-0">
               {/* Chart */}
               <div className="border border-border bg-surface/40 p-4">
-                <TokenChart color={token.color} />
+                <TokenChart color={color} />
               </div>
 
               {/* Stats Grid */}
@@ -567,32 +551,32 @@ export default function TokenDetailPage({
                 <StatCard
                   icon={DollarSign}
                   label="Price"
-                  value={`${token.price.toFixed(6)} SOL`}
+                  value={`${formatPrice(price)} SOL`}
                 />
                 <StatCard
                   icon={TrendingUp}
                   label="Market Cap"
-                  value={`${token.marketCap.toFixed(1)} SOL`}
+                  value={`${marketCap.toFixed(1)} SOL`}
                 />
                 <StatCard
                   icon={BarChart3}
-                  label="Volume 24h"
-                  value={`${token.volume24h.toFixed(1)} SOL`}
+                  label="Reserve"
+                  value={`${realSol.toFixed(2)} SOL`}
                 />
                 <StatCard
                   icon={Layers}
                   label="Total Supply"
-                  value={formatNum(token.totalSupply)}
-                />
-                <StatCard
-                  icon={Users}
-                  label="Holders"
-                  value={formatNum(token.holders)}
+                  value={formatNum(totalSupply)}
                 />
                 <StatCard
                   icon={Activity}
-                  label="Trades"
-                  value={formatNum(token.trades)}
+                  label="Virtual SOL"
+                  value={`${(activeCurve.virtualSol.toNumber() / LAMPORTS_PER_SOL).toFixed(2)}`}
+                />
+                <StatCard
+                  icon={Activity}
+                  label="Virtual Tokens"
+                  value={formatNum(activeCurve.virtualToken.toNumber() / TOKEN_DECIMALS)}
                 />
               </div>
 
@@ -603,7 +587,7 @@ export default function TokenDetailPage({
                     Graduation Progress
                   </h3>
                   <span className="font-mono text-[13px] font-bold" style={{ color: gradColor }}>
-                    {gradReservePct.toFixed(0)}%
+                    {gradPct.toFixed(0)}%
                   </span>
                 </div>
 
@@ -611,10 +595,10 @@ export default function TokenDetailPage({
                   <div
                     className="h-full transition-all duration-700"
                     style={{
-                      width: `${gradReservePct}%`,
+                      width: `${gradPct}%`,
                       background: `linear-gradient(90deg, var(--brand-dim), ${gradColor})`,
                       animation:
-                        gradReservePct > 75
+                        gradPct > 75
                           ? "graduating-glow 2.5s ease-in-out infinite"
                           : "none",
                     }}
@@ -623,20 +607,19 @@ export default function TokenDetailPage({
 
                 <div className="mt-2 flex items-center justify-between text-[11px]">
                   <span className="font-mono text-text-2">
-                    {token.reserveSol.toFixed(2)} SOL
+                    {realSol.toFixed(2)} SOL
                   </span>
-                  <span className="text-text-3">/ 85 SOL to graduate</span>
+                  <span className="text-text-3">/ {GRADUATION_SOL} SOL to graduate</span>
                 </div>
 
-                {/* Mini bonding curve visualization */}
                 <div className="mt-4 h-20">
                   <BondingCurveMini
-                    progress={gradReservePct}
+                    progress={gradPct}
                     color={gradColor}
                   />
                 </div>
 
-                {token.status === "graduated" && (
+                {status === "graduated" && (
                   <div className="mt-3 flex items-center gap-2 text-[12px] text-status-graduated">
                     <Star className="h-3.5 w-3.5" />
                     <span>Graduated to Raydium</span>
@@ -647,17 +630,20 @@ export default function TokenDetailPage({
 
               {/* Trade History */}
               <TradeHistory
-                tokenSymbol={token.symbol}
-                basePrice={token.price}
+                tokenSymbol={tokenSymbol}
+                basePrice={price}
               />
             </div>
 
             {/* RIGHT COLUMN — Sticky trade form (desktop only) */}
             <div className="hidden lg:block lg:sticky lg:top-[72px] lg:self-start">
               <TradeForm
-                tokenSymbol={token.symbol}
-                tokenPrice={token.price}
-                color={token.color}
+                tokenSymbol={tokenSymbol}
+                tokenPrice={price}
+                color={color}
+                mint={id}
+                virtualSol={activeCurve.virtualSol}
+                virtualToken={activeCurve.virtualToken}
               />
             </div>
           </div>
@@ -673,32 +659,30 @@ export default function TokenDetailPage({
           boxShadow: "0 4px 24px -4px rgba(34,197,94,0.4)",
         }}
       >
-        <span className="font-display">Buy ${token.symbol}</span>
-        <span className="mx-1.5 h-4 w-px bg-bg/30" />
-        <span className="font-mono text-[12px] text-bg/70">12,450 {token.symbol}</span>
+        <span className="font-display">Buy ${tokenSymbol}</span>
       </button>
 
       {/* ── Mobile trade modal ── */}
       {tradeOpen && (
         <div className="fixed inset-0 z-[60] lg:hidden">
-          {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setTradeOpen(false)}
           />
-          {/* Sheet */}
           <div
             className="absolute bottom-0 left-0 right-0 max-h-[85vh] overflow-y-auto bg-bg border-t border-border"
             style={{ animation: "slide-up 0.25s ease-out" }}
           >
-            {/* Handle */}
             <div className="sticky top-0 z-10 flex justify-center bg-bg pt-3 pb-2">
               <div className="h-1 w-10 rounded-full bg-border" />
             </div>
             <TradeForm
-              tokenSymbol={token.symbol}
-              tokenPrice={token.price}
-              color={token.color}
+              tokenSymbol={tokenSymbol}
+              tokenPrice={price}
+              color={color}
+              mint={id}
+              virtualSol={activeCurve.virtualSol}
+              virtualToken={activeCurve.virtualToken}
             />
           </div>
         </div>

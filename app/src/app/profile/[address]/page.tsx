@@ -26,9 +26,12 @@ import {
   Sparkles,
   UserPlus,
 } from "lucide-react";
+import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
+import { useToast } from "@/components/toast";
+import { useTokenLaunchpad } from "@/hooks/use-token-launchpad";
 
 /* ═══════════════════════════════════════════════
    MOCK PROFILES
@@ -1075,17 +1078,37 @@ function ReferralsTab({
   isOwnProfile: boolean;
   address: string;
 }) {
+  const { client, connected } = useTokenLaunchpad();
+  const toast = useToast();
   const [linkCopied, setLinkCopied] = useState(false);
   const [isRegistered, setIsRegistered] = useState(referrals.length > 0);
   const [registering, setRegistering] = useState(false);
   const [claiming, setClaiming] = useState(false);
-  const [claimSuccess, setClaimSuccess] = useState(false);
+  const [onChainEarned, setOnChainEarned] = useState<number | null>(null);
 
-  // Mock claimable balance (in a real app, this comes from the on-chain PDA)
-  const claimableBalance = totalEarned * 0.3; // ~30% unclaimed as mock
+  // Try to fetch real referral data from on-chain
+  useEffect(() => {
+    async function fetchReferral() {
+      if (!client) return;
+      try {
+        const ref = await client.getReferral(new PublicKey(address));
+        setIsRegistered(true);
+        setOnChainEarned(ref.totalEarned.toNumber() / LAMPORTS_PER_SOL);
+      } catch {
+        // Account doesn't exist — not registered
+        setIsRegistered(referrals.length > 0);
+      }
+    }
+    fetchReferral();
+  }, [client, address, referrals.length]);
+
+  const displayEarned = onChainEarned ?? totalEarned;
+  const claimableBalance = displayEarned * 0.3; // Approximate — real value would come from PDA balance
 
   const totalTrades = referrals.reduce((s, r) => s + r.trades, 0);
-  const referralLink = `https://launch.app/?ref=${address}`;
+  const referralLink = typeof window !== "undefined"
+    ? `${window.location.origin}/?ref=${address}`
+    : `https://launch.app/?ref=${address}`;
 
   function handleCopyLink() {
     navigator.clipboard.writeText(referralLink);
@@ -1093,24 +1116,36 @@ function ReferralsTab({
     setTimeout(() => setLinkCopied(false), 2000);
   }
 
-  function handleRegister() {
+  async function handleRegister() {
+    if (!client || !connected) {
+      toast.error("Please connect your wallet first.");
+      return;
+    }
     setRegistering(true);
-    // Mock: simulate register_referral instruction
-    setTimeout(() => {
+    try {
+      await client.registerReferral();
       setIsRegistered(true);
+      toast.success("Registered as referrer");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Registration failed";
+      toast.error(message);
+    } finally {
       setRegistering(false);
-    }, 1500);
+    }
   }
 
-  function handleClaim() {
-    if (claimableBalance <= 0) return;
+  async function handleClaim() {
+    if (claimableBalance <= 0 || !client || !connected) return;
     setClaiming(true);
-    // Mock: simulate claim_referral_fees instruction
-    setTimeout(() => {
+    try {
+      await client.claimReferralFees();
+      toast.success(`Claimed ${claimableBalance.toFixed(3)} SOL`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Claim failed";
+      toast.error(message);
+    } finally {
       setClaiming(false);
-      setClaimSuccess(true);
-      setTimeout(() => setClaimSuccess(false), 3000);
-    }, 2000);
+    }
   }
 
   // ── Not registered + own profile ──
@@ -1222,7 +1257,7 @@ function ReferralsTab({
         >
           <p className="text-[10px] uppercase tracking-wider text-text-3">Total Earned</p>
           <p className="mt-1 font-mono text-lg font-bold tabular-nums text-brand">
-            {totalEarned.toFixed(3)}
+            {displayEarned.toFixed(3)}
             <span className="ml-0.5 text-[10px] font-normal text-text-3">SOL</span>
           </p>
         </div>
@@ -1270,19 +1305,12 @@ function ReferralsTab({
             onClick={handleClaim}
             disabled={claimableBalance <= 0 || claiming}
             className={`w-full flex items-center justify-center gap-2 py-3 text-[14px] font-semibold transition-all ${
-              claimSuccess
-                ? "bg-buy/20 text-buy border border-buy/30"
-                : claimableBalance > 0
-                  ? "bg-brand/10 text-brand border border-brand/30 hover:bg-brand/20 hover:scale-[1.005] active:scale-[0.995]"
-                  : "bg-surface/40 text-text-3 border border-border cursor-not-allowed"
+              claimableBalance > 0
+                ? "bg-brand/10 text-brand border border-brand/30 hover:bg-brand/20 hover:scale-[1.005] active:scale-[0.995]"
+                : "bg-surface/40 text-text-3 border border-border cursor-not-allowed"
             }`}
           >
-            {claimSuccess ? (
-              <>
-                <Check className="h-4 w-4" />
-                Claimed successfully
-              </>
-            ) : claiming ? (
+            {claiming ? (
               <>
                 <div className="h-4 w-4 border-2 border-brand/40 border-t-brand rounded-full animate-spin" />
                 Claiming...

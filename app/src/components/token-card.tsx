@@ -18,6 +18,7 @@ export interface TokenData {
   createdAgo: string;
   color: string;
   sparkData: number[];
+  image?: string | null;
 }
 
 /* ── Formatting helpers ── */
@@ -111,12 +112,20 @@ export function TokenCard({
       <div className="px-4 pt-4">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div
-              className="flex h-8 w-8 shrink-0 items-center justify-center text-[11px] font-bold text-bg"
-              style={{ background: token.color, borderRadius: "50%" }}
-            >
-              {token.symbol.charAt(0)}
-            </div>
+            {token.image ? (
+              <img
+                src={token.image}
+                alt={token.symbol}
+                className="h-8 w-8 shrink-0 rounded-full object-cover"
+              />
+            ) : (
+              <div
+                className="flex h-8 w-8 shrink-0 items-center justify-center text-[11px] font-bold text-bg"
+                style={{ background: token.color, borderRadius: "50%" }}
+              >
+                {token.symbol.charAt(0)}
+              </div>
+            )}
             <div className="min-w-0">
               <span className="text-[13px] font-semibold text-text-1 truncate block">
                 {token.name}

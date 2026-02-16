@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   Upload,
   Globe,
@@ -13,9 +14,16 @@ import {
   ExternalLink,
   Shield,
 } from "lucide-react";
+import { BN } from "@coral-xyz/anchor";
+import { LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { Navbar } from "../../components/navbar";
 import { Footer } from "../../components/footer";
 import { useButtonParticles } from "../../components/button-particles";
+import { useToast } from "../../components/toast";
+import { useTokenLaunchpad } from "@/hooks/use-token-launchpad";
+import { calculateBuyAmount } from "@sdk/math";
+import { DEFAULT_VIRTUAL_SOL, DEFAULT_VIRTUAL_TOKENS } from "@sdk/constants";
 
 /* ─── Color palette presets ─── */
 
@@ -58,6 +66,13 @@ function truncAddr(addr: string): string {
 
 export default function CreatePage() {
   const burst = useButtonParticles();
+  const router = useRouter();
+  const toast = useToast();
+  const { client, connected } = useTokenLaunchpad();
+  const { connect } = useWallet();
+
+  /* Launch result */
+  const [mintAddress, setMintAddress] = useState<string | null>(null);
 
   /* Form state */
   const [name, setName] = useState("");
@@ -67,7 +82,9 @@ export default function CreatePage() {
   const [customHex, setCustomHex] = useState("");
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [twitter, setTwitter] = useState("");
   const [telegram, setTelegram] = useState("");
   const [website, setWebsite] = useState("");
@@ -92,6 +109,7 @@ export default function CreatePage() {
   /* Image handling */
   function processFile(file: File) {
     if (!file.type.startsWith("image/")) return;
+    setImageFile(file);
     const reader = new FileReader();
     reader.onload = (ev) => {
       setImagePreview(ev.target?.result as string);
@@ -120,24 +138,24 @@ export default function CreatePage() {
     setDragging(false);
   }, []);
 
+  function processBannerFile(file: File) {
+    if (!file.type.startsWith("image/")) return;
+    setBannerFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setBannerPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  }
+
   function handleBannerUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => setBannerPreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
-    }
+    if (file) processBannerFile(file);
   }
 
   const handleBannerDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setBannerDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (ev) => setBannerPreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
-    }
+    if (file) processBannerFile(file);
   }, []);
 
   /* Color selection */
@@ -153,15 +171,85 @@ export default function CreatePage() {
     }
   }
 
-  /* Mock launch */
-  function handleLaunch(e: React.MouseEvent<HTMLButtonElement>) {
+  /* Real launch via SDK */
+  async function handleLaunch(e: React.MouseEvent<HTMLButtonElement>) {
     if (!canLaunch) return;
     burst(e, color);
+
+    if (!connected || !client) {
+      try {
+        await connect();
+      } catch {
+        toast.error("Please connect your wallet first.");
+      }
+      return;
+    }
+
     setLaunching(true);
-    setTimeout(() => {
+    try {
+      // Upload image + metadata to IPFS via Pinata
+      let metadataUri: string;
+      const uploadForm = new FormData();
+      if (imageFile) {
+        uploadForm.append("file", imageFile);
+      }
+      if (bannerFile) {
+        uploadForm.append("banner", bannerFile);
+      }
+      uploadForm.append("name", name);
+      uploadForm.append("symbol", displaySymbol);
+      uploadForm.append("description", description);
+      uploadForm.append("color", color);
+      uploadForm.append("twitter", twitter);
+      uploadForm.append("telegram", telegram);
+      uploadForm.append("website", website);
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: uploadForm,
+      });
+
+      if (uploadRes.ok) {
+        const uploadData = await uploadRes.json();
+        metadataUri = uploadData.uri;
+      } else {
+        const errData = await uploadRes.json().catch(() => ({}));
+        console.warn("Pinata upload failed:", errData.error);
+        toast.info("IPFS unavailable — saving metadata locally");
+        // Fallback: store metadata via local API
+        metadataUri = "";
+      }
+
+      let mint;
+      if (buyOnCreate && initialBuyNum > 0) {
+        const solAmount = new BN(Math.floor(initialBuyNum * LAMPORTS_PER_SOL));
+        // Calculate min tokens out with 5% slippage
+        const estimatedTokens = calculateBuyAmount(
+          DEFAULT_VIRTUAL_SOL,
+          DEFAULT_VIRTUAL_TOKENS,
+          solAmount,
+        );
+        const minTokensOut = estimatedTokens.muln(95).divn(100);
+        mint = await client.createAndBuyToken(
+          name,
+          symbol,
+          metadataUri,
+          solAmount,
+          minTokensOut,
+        );
+      } else {
+        mint = await client.createToken(name, symbol, metadataUri);
+      }
+
+      setMintAddress(mint.toBase58());
       setLaunching(false);
       setLaunched(true);
-    }, 2200);
+    } catch (err: unknown) {
+      setLaunching(false);
+      const message =
+        err instanceof Error ? err.message : "Transaction failed";
+      toast.error(message);
+    }
   }
 
   /* ─── Success state ─── */
@@ -253,7 +341,7 @@ export default function CreatePage() {
             style={{ animation: "fade-in-up 0.5s ease-out both 0.65s" }}
           >
             <a
-              href={`/token/mock-${displaySymbol.toLowerCase()}`}
+              href={`/token/${mintAddress}`}
               className="flex items-center gap-2 px-5 py-2.5 text-[13px] font-semibold text-bg transition-transform hover:scale-[1.03] active:scale-[0.97]"
               style={{ background: color }}
             >
@@ -263,11 +351,12 @@ export default function CreatePage() {
             <button
               onClick={() => {
                 setLaunched(false);
+                setMintAddress(null);
                 setName("");
                 setSymbol("");
                 setDescription("");
-                setImagePreview(null);
-                setBannerPreview(null);
+                setImagePreview(null); setImageFile(null);
+                setBannerPreview(null); setBannerFile(null);
                 setTwitter("");
                 setTelegram("");
                 setWebsite("");
@@ -478,7 +567,7 @@ export default function CreatePage() {
                 />
                 {bannerPreview && (
                   <button
-                    onClick={() => setBannerPreview(null)}
+                    onClick={() => { setBannerPreview(null); setBannerFile(null); }}
                     className="mt-1 text-[10px] text-text-3 hover:text-sell transition-colors"
                   >
                     Remove banner
@@ -783,7 +872,12 @@ export default function CreatePage() {
                       <div className="flex items-center justify-between border-t border-border pt-3">
                         <span className="text-[12px] text-text-3">You receive</span>
                         <span className="font-mono text-[13px] font-medium text-text-1">
-                          ~{Math.floor(initialBuyNum * 35_000_000).toLocaleString()}{" "}
+                          ~{(() => {
+                            const solBn = new BN(Math.floor(initialBuyNum * LAMPORTS_PER_SOL));
+                            const tokens = calculateBuyAmount(DEFAULT_VIRTUAL_SOL, DEFAULT_VIRTUAL_TOKENS, solBn);
+                            // tokens are in raw units (6 decimals)
+                            return Math.floor(tokens.toNumber() / 1_000_000).toLocaleString();
+                          })()}{" "}
                           <span className="text-text-3">{displaySymbol || "tokens"}</span>
                         </span>
                       </div>

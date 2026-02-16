@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /* ─── Types ─── */
 
@@ -77,132 +77,139 @@ export function TokenChart({ color = "#c9a84c" }: { color?: string }) {
     isUp: boolean;
   } | null>(null);
 
-  const initChart = useCallback(async () => {
+  useEffect(() => {
     if (!containerRef.current) return;
+    let disposed = false;
+    let chart: ReturnType<typeof import("lightweight-charts").createChart> | null = null;
+    let ro: ResizeObserver | null = null;
 
-    const { createChart, AreaSeries, ColorType, CrosshairMode, LineStyle } = await import(
-      "lightweight-charts"
-    );
+    (async () => {
+      if (disposed || !containerRef.current) return;
 
-    // Dispose previous
-    if (chartRef.current) {
-      chartRef.current.remove();
-      chartRef.current = null;
-    }
+      const { createChart, AreaSeries, ColorType, CrosshairMode, LineStyle } = await import(
+        "lightweight-charts"
+      );
 
-    const data = generateMockData(timeframe);
+      if (disposed || !containerRef.current) return;
 
-    const chart = createChart(containerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#78716c",
-        fontFamily: "var(--font-geist-mono), monospace",
-        fontSize: 10,
-      },
-      grid: {
-        vertLines: { color: "#2e2b2815" },
-        horzLines: { color: "#2e2b2830" },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: { color: "#44403c", width: 1, style: LineStyle.Dashed, labelVisible: false },
-        horzLine: { color: "#44403c", width: 1, style: LineStyle.Dashed, labelVisible: true },
-      },
-      rightPriceScale: {
-        borderColor: "#2e2b28",
-        scaleMargins: { top: 0.1, bottom: 0.05 },
-      },
-      timeScale: {
-        borderColor: "#2e2b28",
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      handleScroll: { vertTouchDrag: false },
-      width: containerRef.current.clientWidth,
-      height: containerRef.current.clientHeight,
-    });
-
-    const areaSeries = chart.addSeries(AreaSeries, {
-      lineColor: color,
-      topColor: color + "40",
-      bottomColor: color + "05",
-      lineWidth: 2,
-      crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 4,
-      crosshairMarkerBorderColor: color,
-      crosshairMarkerBackgroundColor: "#0c0a09",
-      priceFormat: { type: "price", precision: 6, minMove: 0.000001 },
-    });
-
-    areaSeries.setData(
-      data.map((d) => ({
-        time: d.time as import("lightweight-charts").UTCTimestamp,
-        value: d.close,
-      })),
-    );
-
-    chart.timeScale().fitContent();
-
-    // Tooltip on crosshair move
-    chart.subscribeCrosshairMove((param) => {
-      if (!param.point || !param.time || !param.seriesData.size) {
-        setTooltip(null);
-        return;
+      // Dispose previous
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
       }
 
-      const seriesData = param.seriesData.get(areaSeries) as { value: number } | undefined;
-      if (!seriesData) {
-        setTooltip(null);
-        return;
-      }
+      const data = generateMockData(timeframe);
 
-      const price = seriesData.value;
-      const firstPrice = data[0].close;
-      const changePct = ((price - firstPrice) / firstPrice) * 100;
-      const date = new Date((param.time as number) * 1000);
-      const timeStr = date.toLocaleString("en-US", {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
+      chart = createChart(containerRef.current, {
+        layout: {
+          background: { type: ColorType.Solid, color: "transparent" },
+          textColor: "#78716c",
+          fontFamily: "var(--font-geist-mono), monospace",
+          fontSize: 10,
+        },
+        grid: {
+          vertLines: { color: "#2e2b2815" },
+          horzLines: { color: "#2e2b2830" },
+        },
+        crosshair: {
+          mode: CrosshairMode.Normal,
+          vertLine: { color: "#44403c", width: 1, style: LineStyle.Dashed, labelVisible: false },
+          horzLine: { color: "#44403c", width: 1, style: LineStyle.Dashed, labelVisible: true },
+        },
+        rightPriceScale: {
+          borderColor: "#2e2b28",
+          scaleMargins: { top: 0.1, bottom: 0.05 },
+        },
+        timeScale: {
+          borderColor: "#2e2b28",
+          timeVisible: true,
+          secondsVisible: false,
+        },
+        handleScroll: { vertTouchDrag: false },
+        width: containerRef.current.clientWidth,
+        height: containerRef.current.clientHeight,
       });
 
-      setTooltip({
-        visible: true,
-        x: param.point.x,
-        y: param.point.y,
-        price: price.toFixed(6),
-        change: `${changePct >= 0 ? "+" : ""}${changePct.toFixed(1)}%`,
-        time: timeStr,
-        isUp: changePct >= 0,
+      const areaSeries = chart.addSeries(AreaSeries, {
+        lineColor: color,
+        topColor: color + "40",
+        bottomColor: color + "05",
+        lineWidth: 2,
+        crosshairMarkerVisible: true,
+        crosshairMarkerRadius: 4,
+        crosshairMarkerBorderColor: color,
+        crosshairMarkerBackgroundColor: "#0c0a09",
+        priceFormat: { type: "price", precision: 10, minMove: 0.0000000001 },
       });
-    });
 
-    chartRef.current = chart;
+      areaSeries.setData(
+        data.map((d) => ({
+          time: d.time as import("lightweight-charts").UTCTimestamp,
+          value: d.close,
+        })),
+      );
 
-    // Resize observer
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        chart.applyOptions({
-          width: entry.contentRect.width,
-          height: entry.contentRect.height,
+      chart.timeScale().fitContent();
+
+      // Tooltip on crosshair move
+      chart.subscribeCrosshairMove((param) => {
+        if (!param.point || !param.time || !param.seriesData.size) {
+          setTooltip(null);
+          return;
+        }
+
+        const seriesData = param.seriesData.get(areaSeries) as { value: number } | undefined;
+        if (!seriesData) {
+          setTooltip(null);
+          return;
+        }
+
+        const p = seriesData.value;
+        const firstPrice = data[0].close;
+        const changePct = ((p - firstPrice) / firstPrice) * 100;
+        const date = new Date((param.time as number) * 1000);
+        const timeStr = date.toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
         });
-      }
-    });
-    ro.observe(containerRef.current);
+
+        setTooltip({
+          visible: true,
+          x: param.point.x,
+          y: param.point.y,
+          price: p.toFixed(10),
+          change: `${changePct >= 0 ? "+" : ""}${changePct.toFixed(1)}%`,
+          time: timeStr,
+          isUp: changePct >= 0,
+        });
+      });
+
+      chartRef.current = chart;
+
+      // Resize observer
+      ro = new ResizeObserver((entries) => {
+        if (disposed) return;
+        for (const entry of entries) {
+          chart?.applyOptions({
+            width: entry.contentRect.width,
+            height: entry.contentRect.height,
+          });
+        }
+      });
+      ro.observe(containerRef.current);
+    })();
 
     return () => {
-      ro.disconnect();
-      chart.remove();
+      disposed = true;
+      ro?.disconnect();
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+      }
     };
   }, [timeframe, color]);
-
-  useEffect(() => {
-    const cleanup = initChart();
-    return () => {
-      cleanup?.then((fn) => fn?.());
-    };
-  }, [initChart]);
 
   return (
     <div className="relative">

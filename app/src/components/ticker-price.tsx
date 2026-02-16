@@ -67,9 +67,26 @@ function Digit({ value, flash }: { value: string; flash: "up" | "down" | null })
   );
 }
 
+function autoDecimals(price: number): number {
+  if (price === 0) return 6;
+  if (price >= 1) return 4;
+  if (price >= 0.001) return 6;
+  // For very small prices, find first significant digit
+  const str = price.toFixed(20);
+  const dotIdx = str.indexOf(".");
+  if (dotIdx === -1) return 2;
+  for (let i = dotIdx + 1; i < str.length; i++) {
+    if (str[i] !== "0") {
+      // Show 4 significant digits after the first non-zero
+      return Math.min(i - dotIdx + 3, 14);
+    }
+  }
+  return 10;
+}
+
 export function TickerPrice({
   price,
-  decimals = 6,
+  decimals,
   flash,
   className = "",
 }: {
@@ -78,7 +95,8 @@ export function TickerPrice({
   flash: "up" | "down" | null;
   className?: string;
 }) {
-  const formatted = price.toFixed(decimals);
+  const d = decimals ?? autoDecimals(price);
+  const formatted = price.toFixed(d);
   const chars = formatted.split("");
 
   return (
