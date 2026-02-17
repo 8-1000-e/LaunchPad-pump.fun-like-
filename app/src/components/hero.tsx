@@ -147,7 +147,7 @@ export function Hero() {
   );
 
   return (
-    <section className="relative h-[85vh] min-h-[600px] overflow-hidden">
+    <section className="relative h-[85vh] min-h-[600px] overflow-hidden bg-bg">
       {/* ── 3D Canvas background ── */}
       <div className="absolute inset-0">
         {chart3D}

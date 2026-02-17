@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Search, ArrowUpDown, ChevronDown, ArrowRight, Rocket, TrendingUp, Zap, Loader2 } from "lucide-react";
 import { PublicKey, LAMPORTS_PER_SOL, Connection } from "@solana/web3.js";
 import { Navbar } from "@/components/navbar";
@@ -42,8 +42,6 @@ function getRotatingConnection(): Connection {
 /* ─── Trade data fetching for token list ─── */
 
 const TRADES_PER_TOKEN = 10;
-const ENRICH_DELAY_MS = 2000; // reduced — rotation spreads load across keys
-const BETWEEN_TOKEN_DELAY_MS = 400; // reduced — 3 keys = 3x budget
 
 async function fetchRecentTrades(
   connection: import("@solana/web3.js").Connection,
@@ -137,13 +135,14 @@ export default function Home() {
   const solUsd = useSolPrice();
   const [onChainTokens, setOnChainTokens] = useState<TokenData[]>([]);
   const [loadingTokens, setLoadingTokens] = useState(true);
-  const enrichedRef = useRef(false);
 
   useEffect(() => {
-    async function fetchTokens() {
+    let cancelled = false;
+
+    async function fetchAll() {
       setLoadingTokens(true);
       try {
-        // Create a read-only client if wallet not connected
+        // 1 RPC call: list all bonding curves
         let fetchClient = client;
         if (!fetchClient) {
           const { TokenLaunchpadClient } = await import("@sdk/client");
@@ -159,8 +158,12 @@ export default function Home() {
         const accounts = await fetchClient.listAllBondingCurves();
         const mints = accounts.map((acc: any) => acc.account.mint.toBase58());
 
-        // Fetch metadata in parallel
-        const metadataMap = await fetchBatchMetadata(connection, mints);
+        // Use a rotated connection for metadata (spreads load)
+        const metaConn = HELIUS_KEYS.length > 0 ? getRotatingConnection() : connection;
+
+        // 1 RPC call: fetch ALL metadata accounts at once (getMultipleAccountsInfo)
+        // + parallel HTTP fetches for JSON URIs (no RPC)
+        const metadataMap = await fetchBatchMetadata(metaConn, mints);
 
         // Filter out tokens without metadata URI (broken/test tokens)
         const withMetadata = accounts.filter((acc: any) => {
@@ -168,6 +171,9 @@ export default function Home() {
           return meta && meta.uri;
         });
 
+        if (cancelled) return;
+
+        // Build base token data
         const mapped: TokenData[] = withMetadata.map((acc: any) => {
           const bc = acc.account;
           const mintAddr = bc.mint.toBase58();
@@ -208,75 +214,45 @@ export default function Home() {
           };
         });
 
-        enrichedRef.current = false;
+        // Show tokens immediately (before trade data loads)
         setOnChainTokens(mapped);
-      } catch (err) {
-        console.error("Failed to fetch tokens:", err);
-        setOnChainTokens([]);
-      } finally {
         setLoadingTokens(false);
-      }
-    }
-    fetchTokens();
-  }, [client, connection]);
 
-  /* ─── Enrich tokens with real trade data (runs after initial load) ─── */
-  useEffect(() => {
-    if (onChainTokens.length === 0 || enrichedRef.current) return;
-    enrichedRef.current = true;
+        if (cancelled) return;
 
-    let cancelled = false;
-
-    async function enrichTokens() {
-      // Wait for rate limit to recover after metadata fetch
-      console.log(`[enrichTokens] waiting ${ENRICH_DELAY_MS}ms for rate limit to recover...`);
-      await new Promise((r) => setTimeout(r, ENRICH_DELAY_MS));
-      if (cancelled) return;
-
-      try {
-        // Process tokens one at a time with delays to stay within rate limits
-        const results: ({ volume24h: number; priceChange24h: number; sparkData: number[] } | null)[] = [];
-
-        for (let i = 0; i < onChainTokens.length; i++) {
-          if (cancelled) return;
-
-          try {
-            // Rotate across Helius keys so each token hits a different key
+        // Fetch trade data for ALL tokens in parallel — each on a different key
+        console.log(`[fetchAll] enriching ${mapped.length} tokens in parallel...`);
+        const tradeResults = await Promise.allSettled(
+          mapped.map((token) => {
             const conn = HELIUS_KEYS.length > 0 ? getRotatingConnection() : connection;
-            const data = await fetchRecentTrades(conn, onChainTokens[i].id);
-            results.push(data);
-            console.log(`[enrichTokens] ${i + 1}/${onChainTokens.length} done (${onChainTokens[i].symbol}) [key ${((_keyIndex - 1) % HELIUS_KEYS.length) + 1}/${HELIUS_KEYS.length}]`);
-          } catch (err) {
-            console.warn(`[enrichTokens] failed for ${onChainTokens[i].symbol}:`, err);
-            results.push(null);
-          }
-
-          // Pause between tokens to avoid rate limiting
-          if (i < onChainTokens.length - 1) {
-            await new Promise((r) => setTimeout(r, BETWEEN_TOKEN_DELAY_MS));
-          }
-        }
+            return fetchRecentTrades(conn, token.id);
+          }),
+        );
 
         if (cancelled) return;
 
         let enrichedCount = 0;
         setOnChainTokens((prev) =>
           prev.map((token, i) => {
-            const data = results[i];
-            if (!data || data.sparkData.length === 0) return token;
+            const result = tradeResults[i];
+            if (!result || result.status !== "fulfilled") return token;
+            const { volume24h, priceChange24h, sparkData } = result.value;
+            if (sparkData.length === 0) return token;
             enrichedCount++;
-            return { ...token, volume24h: data.volume24h, priceChange24h: data.priceChange24h, sparkData: data.sparkData };
+            return { ...token, volume24h, priceChange24h, sparkData };
           }),
         );
-        console.log(`[enrichTokens] enriched ${enrichedCount}/${onChainTokens.length} tokens with trade data`);
+        console.log(`[fetchAll] enriched ${enrichedCount}/${mapped.length} tokens`);
       } catch (err) {
-        console.error("[enrichTokens] failed:", err);
+        console.error("Failed to fetch tokens:", err);
+        setOnChainTokens([]);
+        setLoadingTokens(false);
       }
     }
 
-    enrichTokens();
+    fetchAll();
     return () => { cancelled = true; };
-  }, [onChainTokens, connection]);
+  }, [client, connection]);
 
   /* ─── Responsive detection ─── */
   const [isMobile, setIsMobile] = useState(false);
