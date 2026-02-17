@@ -6,7 +6,7 @@ import { PublicKey, LAMPORTS_PER_SOL, Connection } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import { getBondingCurvePda } from "@sdk/pda";
 
-/* ─── Helius RPC key rotation (shared with page.tsx) ─── */
+/* ─── Helius RPC key rotation (for non-batch calls) ─── */
 const HELIUS_KEYS = [
   process.env.NEXT_PUBLIC_HELIUS_API_KEY,
   process.env.NEXT_PUBLIC_HELIUS_API_KEY_2,
@@ -18,6 +18,12 @@ function getRotatingConnection(): Connection {
   _keyIdx++;
   return new Connection(`https://devnet.helius-rpc.com/?api-key=${key}`, "confirmed");
 }
+
+/* ─── Paid Helius key for batch calls (free plan blocks batch requests) ─── */
+const HELIUS_BATCH_RPC = new Connection(
+  `https://devnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_HELIUS_API_KEY_2}`,
+  "confirmed",
+);
 
 /* ─── Trade Event parsing (browser-safe, no Node crypto) ─── */
 
@@ -144,8 +150,8 @@ export function useTradeData(mint: string) {
         const signatures = await conn.getSignaturesForAddress(pda, opts);
         if (signatures.length === 0) break;
 
-        // Batch fetch all transactions at once (1 RPC call instead of N)
-        const txs = await conn.getParsedTransactions(
+        // Batch fetch via paid Helius key (free plan blocks batch requests)
+        const txs = await HELIUS_BATCH_RPC.getParsedTransactions(
           signatures.map((s) => s.signature),
           { maxSupportedTransactionVersion: 0 },
         );

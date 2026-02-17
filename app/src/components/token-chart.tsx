@@ -119,7 +119,7 @@ export function TokenChart({
     (async () => {
       if (disposed || !containerRef.current) return;
 
-      const { createChart, LineSeries, ColorType, CrosshairMode, LineStyle } = await import(
+      const { createChart, AreaSeries, ColorType, CrosshairMode, LineStyle } = await import(
         "lightweight-charts"
       );
 
@@ -174,9 +174,11 @@ export function TokenChart({
         height: containerRef.current.clientHeight,
       });
 
-      const lineSeries = chart.addSeries(LineSeries, {
-        color: color,
+      const lineSeries = chart.addSeries(AreaSeries, {
+        lineColor: color,
         lineWidth: 2,
+        topColor: color + "40",       // gold ~25% opacity at top
+        bottomColor: color + "05",    // nearly transparent at bottom
         crosshairMarkerVisible: true,
         crosshairMarkerRadius: 4,
         crosshairMarkerBorderColor: color,
