@@ -221,6 +221,41 @@ export default function LeaderboardPage() {
     <>
       <Navbar />
 
+      {/* ═══ COMING SOON OVERLAY ═══ */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+        <div
+          className="flex flex-col items-center gap-4 pointer-events-auto"
+          style={{ animation: "fade-in-up 0.6s ease-out both 0.3s" }}
+        >
+          <div
+            className="flex h-16 w-16 items-center justify-center rounded-full"
+            style={{
+              background: "linear-gradient(135deg, rgba(201,168,76,0.15), rgba(201,168,76,0.05))",
+              border: "1px solid rgba(201,168,76,0.2)",
+            }}
+          >
+            <Crown className="h-7 w-7 text-brand" style={{ filter: "drop-shadow(0 0 8px rgba(201,168,76,0.5))" }} />
+          </div>
+          <div className="text-center">
+            <h2
+              className="font-display text-3xl font-bold text-text-1 sm:text-4xl"
+              style={{ textShadow: "0 0 30px rgba(201,168,76,0.3)" }}
+            >
+              Coming Soon
+            </h2>
+            <p className="mt-2 text-[14px] text-text-2 max-w-xs">
+              The leaderboard is being built. Stay tuned.
+            </p>
+          </div>
+          <Link
+            href="/"
+            className="mt-2 px-5 py-2 text-[13px] font-medium text-brand border border-brand/20 hover:bg-brand/5 transition-colors"
+          >
+            Back to Home
+          </Link>
+        </div>
+      </div>
+
       {/* ─── Background effects (same atmosphere as landing) ─── */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <div
@@ -272,7 +307,7 @@ export default function LeaderboardPage() {
       </div>
       <div className="noise-overlay" />
 
-      <div className="relative z-10">
+      <div className="relative z-10 select-none blur-[6px] pointer-events-none">
         {/* ═══════════════════════════════════════════
             LIVE ACTIVITY TICKER
             ═══════════════════════════════════════════ */}
@@ -611,7 +646,9 @@ export default function LeaderboardPage() {
         </div>
       </div>
 
-      <Footer />
+      <div className="blur-[6px] pointer-events-none select-none">
+        <Footer />
+      </div>
 
       {/* ─── Inline CSS for trophy animation ─── */}
       <style jsx>{`

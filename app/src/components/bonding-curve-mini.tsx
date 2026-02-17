@@ -16,29 +16,32 @@ export function BondingCurveMini({
 
   // Bonding curve shape: y = x^1.6 (convex)
   const W = 280;
-  const H = 80;
-  const PAD = 8;
+  const H = 90;
+  const PAD_X = 8;
+  const PAD_TOP = 18; // extra room for "85 SOL" label
+  const PAD_BOT = 8;
+  const CHART_H = H - PAD_TOP - PAD_BOT;
 
   const pts: string[] = [];
   const steps = 60;
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    const x = PAD + t * (W - PAD * 2);
-    const y = H - PAD - Math.pow(t, 1.6) * (H - PAD * 2);
+    const x = PAD_X + t * (W - PAD_X * 2);
+    const y = H - PAD_BOT - Math.pow(t, 1.6) * CHART_H;
     pts.push(`${x},${y}`);
   }
   const curvePath = pts.join(" ");
 
   // Area fill path
-  const areaPath = `M${PAD},${H - PAD} ` + pts.map((p) => `L${p}`).join(" ") + ` L${W - PAD},${H - PAD} Z`;
+  const areaPath = `M${PAD_X},${H - PAD_BOT} ` + pts.map((p) => `L${p}`).join(" ") + ` L${W - PAD_X},${H - PAD_BOT} Z`;
 
   // Current position on curve
   const p = Math.min(1, Math.max(0, progress / 100));
-  const dotX = PAD + p * (W - PAD * 2);
-  const dotY = H - PAD - Math.pow(p, 1.6) * (H - PAD * 2);
+  const dotX = PAD_X + p * (W - PAD_X * 2);
+  const dotY = H - PAD_BOT - Math.pow(p, 1.6) * CHART_H;
 
   // Graduation threshold line (at 100%)
-  const threshY = H - PAD - Math.pow(1, 1.6) * (H - PAD * 2);
+  const threshY = H - PAD_BOT - Math.pow(1, 1.6) * CHART_H;
 
   // Animate the pulsing dot
   useEffect(() => {
@@ -83,10 +86,10 @@ export function BondingCurveMini({
       {[0.25, 0.5, 0.75].map((t) => (
         <line
           key={t}
-          x1={PAD}
-          y1={H - PAD - t * (H - PAD * 2)}
-          x2={W - PAD}
-          y2={H - PAD - t * (H - PAD * 2)}
+          x1={PAD_X}
+          y1={H - PAD_BOT - t * CHART_H}
+          x2={W - PAD_X}
+          y2={H - PAD_BOT - t * CHART_H}
           stroke="var(--border)"
           strokeWidth="0.5"
           opacity="0.4"
@@ -95,9 +98,9 @@ export function BondingCurveMini({
 
       {/* Graduation threshold dashed line */}
       <line
-        x1={PAD}
+        x1={PAD_X}
         y1={threshY}
-        x2={W - PAD}
+        x2={W - PAD_X}
         y2={threshY}
         stroke="var(--status-graduating)"
         strokeWidth="0.8"
@@ -105,7 +108,7 @@ export function BondingCurveMini({
         opacity="0.5"
       />
       <text
-        x={W - PAD - 2}
+        x={W - PAD_X - 2}
         y={threshY - 4}
         textAnchor="end"
         fontSize="7"

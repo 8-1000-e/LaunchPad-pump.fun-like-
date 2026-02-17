@@ -153,6 +153,15 @@ export function Navbar() {
                   </span>
                 )}
 
+                {/* My Profile button */}
+                <Link
+                  href={`/profile/${publicKey.toBase58()}`}
+                  className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] font-medium text-text-3 hover:text-text-1 transition-colors"
+                >
+                  <User className="h-3.5 w-3.5" />
+                  Profile
+                </Link>
+
                 {/* Connected button → dropdown */}
                 <div className="relative" ref={dropdownRef}>
                   <button
@@ -214,11 +223,11 @@ export function Navbar() {
                         </div>
                       )}
 
-                      {/* My Profile */}
+                      {/* My Profile (mobile only, hidden on desktop where it's in header) */}
                       <Link
                         href={`/profile/${publicKey.toBase58()}`}
                         onClick={() => setDropdownOpen(false)}
-                        className="w-full flex items-center gap-2 px-4 py-2.5 text-[13px] text-text-2 hover:text-text-1 hover:bg-brand/5 transition-colors"
+                        className="sm:hidden w-full flex items-center gap-2 px-4 py-2.5 text-[13px] text-text-2 hover:text-text-1 hover:bg-brand/5 transition-colors"
                       >
                         <User className="h-3.5 w-3.5" />
                         My Profile

@@ -28,6 +28,8 @@ import { BondingCurveMini } from "@/components/bonding-curve-mini";
 import { useTokenLaunchpad } from "@/hooks/use-token-launchpad";
 import { useTokenMetadata } from "@/hooks/use-token-metadata";
 import { useBondingCurveLive } from "@/hooks/use-bonding-curve-live";
+import { useTradeData, type Timeframe } from "@/hooks/use-trade-data";
+import { useSolPrice } from "@/hooks/use-sol-price";
 import { DEFAULT_GRADUATION_THRESHOLD } from "@sdk/constants";
 import type { BondingCurve } from "@sdk/types";
 
@@ -59,6 +61,17 @@ function formatPrice(p: number): string {
 }
 
 const TOKEN_DECIMALS = 1_000_000; // 10^6
+
+function formatUsd(sol: number, solUsd: number | null): string | undefined {
+  if (!solUsd) return undefined;
+  const usd = sol * solUsd;
+  if (usd >= 1_000_000) return `$${(usd / 1_000_000).toFixed(2)}M`;
+  if (usd >= 1_000) return `$${(usd / 1_000).toFixed(2)}K`;
+  if (usd >= 1) return `$${usd.toFixed(2)}`;
+  if (usd >= 0.01) return `$${usd.toFixed(4)}`;
+  // Very small USD values
+  return `$${usd.toExponential(2)}`;
+}
 const GRADUATION_SOL =
   DEFAULT_GRADUATION_THRESHOLD.toNumber() / LAMPORTS_PER_SOL;
 
@@ -142,6 +155,72 @@ function StatCard({
   );
 }
 
+/* ─── Mobile drawer with swipe-to-close ─── */
+
+function MobileDrawer({
+  children,
+  onClose,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const startYRef = useRef(0);
+
+  function onTouchStart(e: React.TouchEvent) {
+    startYRef.current = e.touches[0].clientY;
+    setDragging(true);
+  }
+
+  function onTouchMove(e: React.TouchEvent) {
+    if (!dragging) return;
+    const dy = e.touches[0].clientY - startYRef.current;
+    // Only allow dragging down
+    setDragY(Math.max(0, dy));
+  }
+
+  function onTouchEnd() {
+    setDragging(false);
+    if (dragY > 120) {
+      onClose();
+    } else {
+      setDragY(0);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] lg:hidden">
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        style={{ opacity: Math.max(0, 1 - dragY / 300) }}
+        onClick={onClose}
+      />
+      <div
+        ref={sheetRef}
+        className="absolute bottom-0 left-0 right-0 max-h-[85vh] overflow-y-auto bg-bg border-t border-border"
+        style={{
+          transform: `translateY(${dragY}px)`,
+          transition: dragging ? "none" : "transform 0.25s ease-out",
+          animation: dragY === 0 && !dragging ? "slide-up 0.25s ease-out" : "none",
+        }}
+      >
+        {/* Drag handle */}
+        <div
+          className="sticky top-0 z-10 flex justify-center bg-bg pt-3 pb-2 cursor-grab active:cursor-grabbing"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          <div className="h-1 w-10 rounded-full bg-border" />
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Default color based on mint address ─── */
 const COLORS = [
   "#c9a84c", "#22c55e", "#ef4444", "#3b82f6", "#8b5cf6",
@@ -162,6 +241,7 @@ export default function TokenDetailPage({
 }) {
   const { id } = use(params);
   const { client, connection } = useTokenLaunchpad();
+  const solUsd = useSolPrice();
 
   const [bondingCurve, setBondingCurve] = useState<BondingCurve | null>(null);
   const [loading, setLoading] = useState(true);
@@ -179,6 +259,10 @@ export default function TokenDetailPage({
   const tokenImage = metadata?.image || null;
   const tokenDescription = metadata?.description || null;
   const tokenExtensions = metadata?.extensions;
+
+  // Trade data (shared between chart + trade history) — fetches all available trades once
+  const [chartTimeframe, setChartTimeframe] = useState<Timeframe>("15m");
+  const { trades, loading: tradesLoading, error: tradesError } = useTradeData(id);
 
   const [mintCopied, setMintCopied] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
@@ -543,7 +627,13 @@ export default function TokenDetailPage({
             <div className="space-y-6 min-w-0">
               {/* Chart */}
               <div className="border border-border bg-surface/40 p-4">
-                <TokenChart color={color} />
+                <TokenChart
+                  color={color}
+                  trades={trades}
+                  loading={tradesLoading}
+                  timeframe={chartTimeframe}
+                  onTimeframeChange={setChartTimeframe}
+                />
               </div>
 
               {/* Stats Grid */}
@@ -552,16 +642,19 @@ export default function TokenDetailPage({
                   icon={DollarSign}
                   label="Price"
                   value={`${formatPrice(price)} SOL`}
+                  sub={formatUsd(price, solUsd)}
                 />
                 <StatCard
                   icon={TrendingUp}
                   label="Market Cap"
                   value={`${marketCap.toFixed(1)} SOL`}
+                  sub={formatUsd(marketCap, solUsd)}
                 />
                 <StatCard
                   icon={BarChart3}
                   label="Reserve"
                   value={`${realSol.toFixed(2)} SOL`}
+                  sub={formatUsd(realSol, solUsd)}
                 />
                 <StatCard
                   icon={Layers}
@@ -612,7 +705,7 @@ export default function TokenDetailPage({
                   <span className="text-text-3">/ {GRADUATION_SOL} SOL to graduate</span>
                 </div>
 
-                <div className="mt-4 h-20">
+                <div className="mt-4 h-24">
                   <BondingCurveMini
                     progress={gradPct}
                     color={gradColor}
@@ -631,7 +724,9 @@ export default function TokenDetailPage({
               {/* Trade History */}
               <TradeHistory
                 tokenSymbol={tokenSymbol}
-                basePrice={price}
+                trades={trades}
+                loading={tradesLoading}
+                error={tradesError}
               />
             </div>
 
@@ -644,6 +739,7 @@ export default function TokenDetailPage({
                 mint={id}
                 virtualSol={activeCurve.virtualSol}
                 virtualToken={activeCurve.virtualToken}
+                tokenImage={tokenImage}
               />
             </div>
           </div>
@@ -662,30 +758,18 @@ export default function TokenDetailPage({
         <span className="font-display">Buy ${tokenSymbol}</span>
       </button>
 
-      {/* ── Mobile trade modal ── */}
+      {/* ── Mobile trade drawer (swipe to close) ── */}
       {tradeOpen && (
-        <div className="fixed inset-0 z-[60] lg:hidden">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setTradeOpen(false)}
+        <MobileDrawer onClose={() => setTradeOpen(false)}>
+          <TradeForm
+            tokenSymbol={tokenSymbol}
+            tokenPrice={price}
+            color={color}
+            mint={id}
+            virtualSol={activeCurve.virtualSol}
+            virtualToken={activeCurve.virtualToken}
           />
-          <div
-            className="absolute bottom-0 left-0 right-0 max-h-[85vh] overflow-y-auto bg-bg border-t border-border"
-            style={{ animation: "slide-up 0.25s ease-out" }}
-          >
-            <div className="sticky top-0 z-10 flex justify-center bg-bg pt-3 pb-2">
-              <div className="h-1 w-10 rounded-full bg-border" />
-            </div>
-            <TradeForm
-              tokenSymbol={tokenSymbol}
-              tokenPrice={price}
-              color={color}
-              mint={id}
-              virtualSol={activeCurve.virtualSol}
-              virtualToken={activeCurve.virtualToken}
-            />
-          </div>
-        </div>
+        </MobileDrawer>
       )}
     </div>
   );

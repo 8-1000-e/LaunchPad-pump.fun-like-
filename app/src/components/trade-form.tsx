@@ -11,10 +11,12 @@ import { useButtonParticles } from "./button-particles";
 import { useToast } from "./toast";
 import { useTokenLaunchpad } from "@/hooks/use-token-launchpad";
 import { calculateBuyAmount, calculateSellAmount } from "@sdk/math";
+import { DEFAULT_TRADE_FEE_BPS } from "@sdk/constants";
 
-const QUICK_AMOUNTS = [0.1, 0.5, 1, 5];
+const QUICK_PCTS = [25, 50, 75, 100];
 const SLIPPAGE_OPTIONS = [0.5, 1, 2];
 const TOKEN_DECIMALS = 1_000_000; // 10^6
+const FEE_BPS = DEFAULT_TRADE_FEE_BPS; // 100 = 1%
 
 interface TradeFormProps {
   tokenSymbol: string;
@@ -23,6 +25,7 @@ interface TradeFormProps {
   mint?: string;
   virtualSol?: BN;
   virtualToken?: BN;
+  tokenImage?: string | null;
 }
 
 export function TradeForm({
@@ -32,6 +35,7 @@ export function TradeForm({
   mint,
   virtualSol,
   virtualToken,
+  tokenImage,
 }: TradeFormProps) {
   const burst = useButtonParticles();
   const toast = useToast();
@@ -83,34 +87,40 @@ export function TradeForm({
   const accent = isBuy ? "var(--buy)" : "var(--sell)";
   const numAmount = parseFloat(amount) || 0;
 
-  // Calculate output using real bonding curve math when available
+  // Calculate output using real bonding curve math (fee-adjusted, matches on-chain)
   const outputTokens = (() => {
     if (numAmount <= 0) return 0;
     if (virtualSol && virtualToken) {
       if (isBuy) {
         const solBn = new BN(Math.floor(numAmount * LAMPORTS_PER_SOL));
-        const tokens = calculateBuyAmount(virtualSol, virtualToken, solBn);
+        // Program deducts fee BEFORE the swap: solAfterFee = sol * (10000 - feeBps) / 10000
+        const solAfterFee = solBn.muln(10000 - FEE_BPS).divn(10000);
+        const tokens = calculateBuyAmount(virtualSol, virtualToken, solAfterFee);
         return tokens.toNumber() / TOKEN_DECIMALS;
       } else {
         const tokenBn = new BN(Math.floor(numAmount * TOKEN_DECIMALS));
-        const sol = calculateSellAmount(tokenBn, virtualSol, virtualToken);
-        return sol.toNumber() / LAMPORTS_PER_SOL;
+        const solRaw = calculateSellAmount(tokenBn, virtualSol, virtualToken);
+        // Program deducts fee AFTER computing SOL out
+        const solAfterFee = solRaw.muln(10000 - FEE_BPS).divn(10000);
+        return solAfterFee.toNumber() / LAMPORTS_PER_SOL;
       }
     }
     // Fallback to simple estimate
     return isBuy ? numAmount / tokenPrice : numAmount * tokenPrice;
   })();
 
-  // Price impact estimate
+  // Price impact (includes fee)
   const priceImpact = (() => {
     if (numAmount <= 0 || !virtualSol || !virtualToken) return 0;
     const spotPrice =
       virtualSol.toNumber() / LAMPORTS_PER_SOL /
       (virtualToken.toNumber() / TOKEN_DECIMALS);
     if (isBuy) {
+      // effectivePrice = SOL spent / tokens received (fee already deducted in outputTokens)
       const effectivePrice = numAmount / (outputTokens || 1);
       return ((effectivePrice - spotPrice) / spotPrice) * 100;
     } else {
+      // effectivePrice = SOL received / tokens sold (fee already deducted in outputTokens)
       const effectivePrice = outputTokens / numAmount;
       return ((spotPrice - effectivePrice) / spotPrice) * 100;
     }
@@ -135,10 +145,12 @@ export function TradeForm({
 
       if (isBuy) {
         const solAmount = new BN(Math.floor(numAmount * LAMPORTS_PER_SOL));
-        // Apply slippage to output
+        // Fee-adjusted estimate (matches on-chain logic)
+        const solAfterFee = solAmount.muln(10000 - FEE_BPS).divn(10000);
         const estimatedTokens = virtualSol && virtualToken
-          ? calculateBuyAmount(virtualSol, virtualToken, solAmount)
+          ? calculateBuyAmount(virtualSol, virtualToken, solAfterFee)
           : new BN(0);
+        // Apply slippage tolerance on top
         const minTokensOut = estimatedTokens
           .muln(Math.floor((100 - slippage) * 100))
           .divn(10000);
@@ -146,9 +158,12 @@ export function TradeForm({
         await client.buyToken(mintPk, solAmount, minTokensOut, referral);
       } else {
         const tokenAmount = new BN(Math.floor(numAmount * TOKEN_DECIMALS));
-        const estimatedSol = virtualSol && virtualToken
+        const rawSol = virtualSol && virtualToken
           ? calculateSellAmount(tokenAmount, virtualSol, virtualToken)
           : new BN(0);
+        // Fee-adjusted estimate (matches on-chain logic)
+        const estimatedSol = rawSol.muln(10000 - FEE_BPS).divn(10000);
+        // Apply slippage tolerance on top
         const minSolOut = estimatedSol
           .muln(Math.floor((100 - slippage) * 100))
           .divn(10000);
@@ -213,8 +228,18 @@ export function TradeForm({
             className="mt-1.5 flex items-center border transition-colors"
             style={{ borderColor: numAmount > 0 ? accent : "var(--border)" }}
           >
-            <span className="shrink-0 pl-3 text-[12px] font-mono text-text-2">
-              {isBuy ? "SOL" : tokenSymbol}
+            <span className="shrink-0 pl-3 flex items-center gap-1.5 text-[12px] font-mono text-text-2">
+              {isBuy ? (
+                <>
+                  <img src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png" alt="SOL" className="h-4 w-4 rounded-full" />
+                  SOL
+                </>
+              ) : (
+                <>
+                  {tokenImage && <img src={tokenImage} alt={tokenSymbol} className="h-4 w-4 rounded-full object-cover" />}
+                  {tokenSymbol}
+                </>
+              )}
             </span>
             <input
               type="number"
@@ -225,31 +250,32 @@ export function TradeForm({
             />
           </div>
 
-          {/* Quick amount buttons */}
+          {/* Quick % buttons */}
           <div className="mt-2 flex items-center gap-1.5">
-            {QUICK_AMOUNTS.map((qa) => (
+            {QUICK_PCTS.map((pct) => (
               <button
-                key={qa}
-                onClick={() => setAmount(qa.toString())}
-                className="flex-1 py-1.5 text-[11px] font-mono text-text-3 border border-border transition-colors hover:border-border-hover hover:text-text-2"
+                key={pct}
+                onClick={() => {
+                  if (isBuy && solBalance !== null) {
+                    const val = pct === 100
+                      ? Math.max(0, solBalance - 0.01)
+                      : (solBalance * pct) / 100;
+                    setAmount(val > 0 ? val.toFixed(4) : "");
+                  } else if (!isBuy && tokenBalance !== null) {
+                    const val = (tokenBalance * pct) / 100;
+                    setAmount(val > 0 ? (pct === 100 ? val.toString() : Math.floor(val).toString()) : "");
+                  }
+                }}
+                className={`flex-1 py-1.5 text-[11px] font-mono transition-colors border ${
+                  pct === 100
+                    ? "font-medium"
+                    : "text-text-3 border-border hover:border-border-hover hover:text-text-2"
+                }`}
+                style={pct === 100 ? { borderColor: accent, color: accent } : undefined}
               >
-                {qa}
+                {pct === 100 ? "MAX" : `${pct}%`}
               </button>
             ))}
-            <button
-              onClick={() => {
-                if (isBuy && solBalance !== null) {
-                  // Keep 0.01 SOL for fees
-                  setAmount(Math.max(0, solBalance - 0.01).toFixed(4));
-                } else if (!isBuy && tokenBalance !== null) {
-                  setAmount(tokenBalance.toString());
-                }
-              }}
-              className="flex-1 py-1.5 text-[11px] font-mono font-medium transition-colors border"
-              style={{ borderColor: accent, color: accent }}
-            >
-              MAX
-            </button>
           </div>
 
           <p className="mt-1.5 text-[11px] text-text-3">
@@ -266,11 +292,17 @@ export function TradeForm({
           </p>
         </div>
 
-        {/* Arrow divider */}
+        {/* Arrow divider — click to switch buy/sell */}
         <div className="flex justify-center">
-          <div className="rounded-full border border-border p-1.5">
+          <button
+            onClick={() => {
+              setMode(isBuy ? "sell" : "buy");
+              setAmount("");
+            }}
+            className="rounded-full border border-border p-1.5 transition-colors hover:border-brand hover:bg-brand/5"
+          >
             <ArrowDownUp className="h-3.5 w-3.5 text-text-3" />
-          </div>
+          </button>
         </div>
 
         {/* Output estimate */}
@@ -279,14 +311,24 @@ export function TradeForm({
             You receive
           </label>
           <div className="mt-1.5 flex items-center justify-between border border-border bg-bg/50 py-3 px-3">
-            <span className="text-[12px] font-mono text-text-2">
-              {isBuy ? tokenSymbol : "SOL"}
+            <span className="flex items-center gap-1.5 text-[12px] font-mono text-text-2">
+              {isBuy ? (
+                <>
+                  {tokenImage && <img src={tokenImage} alt={tokenSymbol} className="h-4 w-4 rounded-full object-cover" />}
+                  {tokenSymbol}
+                </>
+              ) : (
+                <>
+                  <img src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png" alt="SOL" className="h-4 w-4 rounded-full" />
+                  SOL
+                </>
+              )}
             </span>
             <span className="font-mono text-[16px] text-text-1">
               {numAmount > 0
                 ? isBuy
-                  ? `~${Math.floor(outputTokens).toLocaleString()}`
-                  : `~${outputTokens.toFixed(4)}`
+                  ? Math.floor(outputTokens).toLocaleString()
+                  : outputTokens.toFixed(4)
                 : "—"}
             </span>
           </div>
@@ -297,7 +339,7 @@ export function TradeForm({
                 className="font-mono"
                 style={{ color: priceImpact > 5 ? "var(--sell)" : "var(--text-2)" }}
               >
-                ~{Math.abs(priceImpact).toFixed(1)}%
+                {Math.abs(priceImpact).toFixed(2)}%
               </span>
             </p>
           )}

@@ -1,18 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import type { TradeData } from "@/hooks/use-trade-data";
+import { type Timeframe, TF_SECONDS } from "@/hooks/use-trade-data";
 
-/* ─── Types ─── */
-
-type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "all";
-
-interface CandleData {
+interface ChartPoint {
   time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
+  value: number;
 }
 
 const TIMEFRAMES: { value: Timeframe; label: string }[] = [
@@ -24,49 +18,57 @@ const TIMEFRAMES: { value: Timeframe; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-/* ─── Generate mock price data ─── */
+/**
+ * Build ALL chart data points from trades (no time filtering).
+ * Each trade = one point (max precision).
+ * Deduplicates by keeping last price per second.
+ */
+function buildAllPoints(trades: TradeData[]): ChartPoint[] {
+  if (trades.length === 0) return [];
 
-function generateMockData(tf: Timeframe): CandleData[] {
-  const count =
-    tf === "1m" ? 120 : tf === "5m" ? 100 : tf === "15m" ? 80 : tf === "1h" ? 72 : tf === "4h" ? 60 : 200;
+  const sorted = [...trades]
+    .filter((t) => t.price > 0 && t.timestamp > 0)
+    .reverse(); // chronological
 
-  const interval =
-    tf === "1m" ? 60 : tf === "5m" ? 300 : tf === "15m" ? 900 : tf === "1h" ? 3600 : tf === "4h" ? 14400 : 86400;
+  if (sorted.length === 0) return [];
 
-  const now = Math.floor(Date.now() / 1000);
-  const data: CandleData[] = [];
-  let price = 0.0008 + Math.random() * 0.001;
-
-  for (let i = 0; i < count; i++) {
-    const volatility = 0.02 + Math.random() * 0.06;
-    const trend = Math.sin(i / (count * 0.15)) * 0.01 + 0.002;
-    const change = (Math.random() - 0.45 + trend) * volatility;
-
-    const open = price;
-    price = Math.max(0.0001, price * (1 + change));
-    const close = price;
-    const high = Math.max(open, close) * (1 + Math.random() * 0.015);
-    const low = Math.min(open, close) * (1 - Math.random() * 0.015);
-    const volume = (0.5 + Math.random() * 4) * (1 + Math.abs(change) * 20);
-
-    data.push({
-      time: now - (count - i) * interval,
-      open,
-      high,
-      low,
-      close,
-      volume,
-    });
+  // Keep last price per second (lightweight-charts needs unique timestamps)
+  const bySecond = new Map<number, number>();
+  for (const trade of sorted) {
+    bySecond.set(trade.timestamp, trade.price);
   }
-  return data;
+
+  // Extend to current time so the line reaches "now"
+  const now = Math.floor(Date.now() / 1000);
+  const lastPrice = sorted[sorted.length - 1].price;
+  if (now - sorted[sorted.length - 1].timestamp > 2) {
+    bySecond.set(now, lastPrice);
+  }
+
+  return Array.from(bySecond.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([time, value]) => ({ time, value }));
 }
 
 /* ─── Chart Component ─── */
 
-export function TokenChart({ color = "#c9a84c" }: { color?: string }) {
+export function TokenChart({
+  color = "#c9a84c",
+  trades,
+  loading,
+  timeframe,
+  onTimeframeChange,
+}: {
+  color?: string;
+  trades: TradeData[];
+  loading: boolean;
+  timeframe: Timeframe;
+  onTimeframeChange: (tf: Timeframe) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof import("lightweight-charts").createChart> | null>(null);
-  const [timeframe, setTimeframe] = useState<Timeframe>("15m");
+  const seriesRef = useRef<ReturnType<ReturnType<typeof import("lightweight-charts").createChart>["addSeries"]> | null>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
   const [tooltip, setTooltip] = useState<{
     visible: boolean;
     x: number;
@@ -77,30 +79,60 @@ export function TokenChart({ color = "#c9a84c" }: { color?: string }) {
     isUp: boolean;
   } | null>(null);
 
+  // All data points — never filtered, always the full history
+  const points = useMemo(() => buildAllPoints(trades), [trades]);
+
+  // Stable ref for points (used in tooltip callback)
+  const pointsRef = useRef(points);
+  pointsRef.current = points;
+
+  // Apply visible range for a given timeframe
+  const applyVisibleRange = useCallback((tf: Timeframe) => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    // Re-enable autoScale before changing range
+    chart.priceScale("right").applyOptions({ autoScale: true });
+
+    const now = Math.floor(Date.now() / 1000);
+    const windowSec = TF_SECONDS[tf];
+
+    if (windowSec > 0 && pointsRef.current.length > 0) {
+      try {
+        chart.timeScale().setVisibleRange({
+          from: (now - windowSec) as import("lightweight-charts").UTCTimestamp,
+          to: now as import("lightweight-charts").UTCTimestamp,
+        });
+      } catch {
+        chart.timeScale().fitContent();
+      }
+    } else {
+      chart.timeScale().fitContent();
+    }
+  }, []);
+
+  // Effect 1: Create chart ONCE
   useEffect(() => {
     if (!containerRef.current) return;
     let disposed = false;
-    let chart: ReturnType<typeof import("lightweight-charts").createChart> | null = null;
-    let ro: ResizeObserver | null = null;
 
     (async () => {
       if (disposed || !containerRef.current) return;
 
-      const { createChart, AreaSeries, ColorType, CrosshairMode, LineStyle } = await import(
+      const { createChart, LineSeries, ColorType, CrosshairMode, LineStyle } = await import(
         "lightweight-charts"
       );
 
       if (disposed || !containerRef.current) return;
 
-      // Dispose previous
+      // Clean up any existing chart
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
+        seriesRef.current = null;
       }
 
-      const data = generateMockData(timeframe);
-
-      chart = createChart(containerRef.current, {
+      const chart = createChart(containerRef.current, {
         layout: {
           background: { type: ColorType.Solid, color: "transparent" },
           textColor: "#78716c",
@@ -118,61 +150,75 @@ export function TokenChart({ color = "#c9a84c" }: { color?: string }) {
         },
         rightPriceScale: {
           borderColor: "#2e2b28",
-          scaleMargins: { top: 0.1, bottom: 0.05 },
+          autoScale: true,
+          scaleMargins: { top: 0.1, bottom: 0.1 },
         },
         timeScale: {
           borderColor: "#2e2b28",
           timeVisible: true,
-          secondsVisible: false,
+          secondsVisible: true,
         },
-        handleScroll: { vertTouchDrag: false },
+        handleScroll: {
+          mouseWheel: true,
+          pressedMouseMove: true,
+          horzTouchDrag: true,
+          vertTouchDrag: false,
+        },
+        handleScale: {
+          mouseWheel: true,
+          pinch: true,
+          axisPressedMouseMove: { time: true, price: false },
+          axisDoubleClickReset: { time: true, price: false },
+        },
         width: containerRef.current.clientWidth,
         height: containerRef.current.clientHeight,
       });
 
-      const areaSeries = chart.addSeries(AreaSeries, {
-        lineColor: color,
-        topColor: color + "40",
-        bottomColor: color + "05",
+      const lineSeries = chart.addSeries(LineSeries, {
+        color: color,
         lineWidth: 2,
         crosshairMarkerVisible: true,
         crosshairMarkerRadius: 4,
         crosshairMarkerBorderColor: color,
         crosshairMarkerBackgroundColor: "#0c0a09",
         priceFormat: { type: "price", precision: 10, minMove: 0.0000000001 },
+        lastValueVisible: true,
+        priceLineVisible: true,
+        priceLineColor: color + "60",
+        priceLineStyle: LineStyle.Dashed,
       });
 
-      areaSeries.setData(
-        data.map((d) => ({
-          time: d.time as import("lightweight-charts").UTCTimestamp,
-          value: d.close,
-        })),
-      );
+      // Force Y-axis to always auto-fit visible data.
+      // lightweight-charts disables autoScale when user interacts with price axis,
+      // so we re-enable it on every visible range change (zoom, pan, timeframe switch).
+      chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+        chart.priceScale("right").applyOptions({ autoScale: true });
+      });
 
-      chart.timeScale().fitContent();
-
-      // Tooltip on crosshair move
+      // Tooltip
       chart.subscribeCrosshairMove((param) => {
         if (!param.point || !param.time || !param.seriesData.size) {
           setTooltip(null);
           return;
         }
 
-        const seriesData = param.seriesData.get(areaSeries) as { value: number } | undefined;
-        if (!seriesData) {
+        const sd = param.seriesData.get(lineSeries) as { value: number } | undefined;
+        if (!sd) {
           setTooltip(null);
           return;
         }
 
-        const p = seriesData.value;
-        const firstPrice = data[0].close;
-        const changePct = ((p - firstPrice) / firstPrice) * 100;
+        const p = sd.value;
+        const pts = pointsRef.current;
+        const firstPrice = pts.length > 0 ? pts[0].value : p;
+        const changePct = firstPrice > 0 ? ((p - firstPrice) / firstPrice) * 100 : 0;
         const date = new Date((param.time as number) * 1000);
         const timeStr = date.toLocaleString("en-US", {
           month: "short",
           day: "numeric",
           hour: "2-digit",
           minute: "2-digit",
+          second: "2-digit",
         });
 
         setTooltip({
@@ -180,36 +226,65 @@ export function TokenChart({ color = "#c9a84c" }: { color?: string }) {
           x: param.point.x,
           y: param.point.y,
           price: p.toFixed(10),
-          change: `${changePct >= 0 ? "+" : ""}${changePct.toFixed(1)}%`,
+          change: `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`,
           time: timeStr,
           isUp: changePct >= 0,
         });
       });
 
       chartRef.current = chart;
+      seriesRef.current = lineSeries;
 
-      // Resize observer
-      ro = new ResizeObserver((entries) => {
+      // ResizeObserver
+      const ro = new ResizeObserver((entries) => {
         if (disposed) return;
         for (const entry of entries) {
-          chart?.applyOptions({
+          chart.applyOptions({
             width: entry.contentRect.width,
             height: entry.contentRect.height,
           });
         }
       });
       ro.observe(containerRef.current);
+      roRef.current = ro;
     })();
 
     return () => {
       disposed = true;
-      ro?.disconnect();
+      roRef.current?.disconnect();
+      roRef.current = null;
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
       }
+      seriesRef.current = null;
     };
-  }, [timeframe, color]);
+  }, [color]); // Only recreate when color changes
+
+  // Effect 2: Update data when points change
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series || points.length === 0) return;
+
+    series.setData(
+      points.map((d) => ({
+        time: d.time as import("lightweight-charts").UTCTimestamp,
+        value: d.value,
+      })),
+    );
+
+    // After data update, apply visible range with a frame delay
+    // so the chart processes the new data first
+    requestAnimationFrame(() => {
+      applyVisibleRange(timeframe);
+    });
+  }, [points, timeframe, applyVisibleRange]);
+
+  // Effect 3: Adjust visible range when timeframe changes
+  // (separate from data so it runs even when points haven't changed)
+  useEffect(() => {
+    applyVisibleRange(timeframe);
+  }, [timeframe, applyVisibleRange]);
 
   return (
     <div className="relative">
@@ -218,7 +293,7 @@ export function TokenChart({ color = "#c9a84c" }: { color?: string }) {
         {TIMEFRAMES.map((tf) => (
           <button
             key={tf.value}
-            onClick={() => setTimeframe(tf.value)}
+            onClick={() => onTimeframeChange(tf.value)}
             className={`px-2.5 py-1 text-[11px] font-mono font-medium transition-colors ${
               timeframe === tf.value
                 ? "bg-brand/10 text-brand"
@@ -232,7 +307,21 @@ export function TokenChart({ color = "#c9a84c" }: { color?: string }) {
 
       {/* Chart container */}
       <div className="relative h-[340px] sm:h-[400px]" ref={containerRef}>
-        {/* Tooltip overlay */}
+        {loading && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-surface/60">
+            <div className="flex items-center gap-2 text-text-3">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-text-3 border-t-transparent" />
+              <span className="text-[12px]">Loading chart...</span>
+            </div>
+          </div>
+        )}
+
+        {!loading && points.length === 0 && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center">
+            <span className="text-[12px] text-text-3">No trade data yet</span>
+          </div>
+        )}
+
         {tooltip?.visible && (
           <div
             className="pointer-events-none absolute z-10 border border-border bg-surface/95 backdrop-blur-sm px-3 py-2"
